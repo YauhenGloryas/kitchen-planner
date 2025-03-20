@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Конструктор мебели</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="menus.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="topMenu">
+        <button class="top-btn" onclick="undoLastAction()">Undo</button>
+        <button class="top-btn" onclick="setLeftView()">Left</button>
+        <button class="top-btn" onclick="setFrontView()">Front</button>
+        <button class="top-btn" onclick="setTopView()">Top</button>
+        <button class="top-btn" onclick="setIsometricView()">3D</button>
+        <button class="top-btn" onclick="saveProject()">Save</button>
+        <button class="top-btn" onclick="loadProject()">Load</button>
+    </div>
+    <div id="leftPanel">
+        <div id="controls">
+            <label>Длина (мм):</label><input type="number" id="length" value="3500" min="100" max="10000"><br>
+            <label>Высота (мм):</label><input type="number" id="height" value="2600" min="100" max="10000"><br>
+            <label>Глубина (мм):</label><input type="number" id="width" value="2500" min="100" max="10000"><br>
+            <label>Цвет:</label><input type="color" id="cubeColor" value="#d3d3d3"><br>
+            <button onclick="applySize()">Применить</button>
+            <button id="kitchenParamsButton">Общие параметры кухни</button>
+        </div>
+        <div id="wallEditMenu">
+            <h3>Редактирование стены</h3>
+            <button onclick="addObject('window')">Добавить окно</button>
+            <button onclick="addObject('socket')">Розетка</button>
+            <button onclick="addObject('radiator')">Радиатор</button>
+            <button onclick="addObject('column')">Колонна</button>
+            <button onclick="addObject('door')">Дверь</button>
+            <button onclick="addObject('apron')">Фартук</button>
+        </div>
+        <div id="lowerCabinetContainer" style="display: none;">
+            <button class="lower-cabinet" draggable="true">Нижний шкаф</button>
+            <button class="upper-cabinet" draggable="true">Верхний шкаф</button>
+        </div>
+    </div>
+    <div id="canvasContainer">
+        <div id="rotateXContainer">
+            <input type="range" id="rotateX" min="-180" max="180" value="0">
+        </div>
+        <div id="rotateYContainer">
+            <input type="range" id="rotateY" min="-180" max="180" value="0">
+        </div>
+    </div>
+    <div id="rightPanel">
+        <div id="zoomContainer">
+            <label>Zoom</label>
+            <input type="range" id="zoom" min="1" max="20" value="10">
+        </div>
+        <div id="rotationValues">
+            <label>Угол X:</label><input type="text" id="rotateXValue" class="angle-display" value="0°" readonly><br>
+            <label>Угол Y:</label><input type="text" id="rotateYValue" class="angle-display" value="0°" readonly>
+        </div>
+        <div id="selectedFaceContainer">
+            <label>Выбрано:</label><input type="text" id="selectedFace" value="None" readonly>
+        </div>
+        <div id="mouseCoords">
+            <label>Mouse X:</label><input type="text" id="mouseX" value="0" readonly><br>
+            <label>Mouse Y:</label><input type="text" id="mouseY" value="0" readonly>
+        </div>
+        <div id="faceBounds">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Грань</th>
+                        <th>X1</th>
+                        <th>Y1</th>
+                        <th>X2</th>
+                        <th>Y2</th>
+                    </tr>
+                </thead>
+                <tbody id="faceBoundsTable"></tbody>
+            </table>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
