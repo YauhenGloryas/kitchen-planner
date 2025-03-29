@@ -2,23 +2,12 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Конструктор мебели</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-    <script src="menus.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="topMenu">
-        <button class="top-btn" onclick="undoLastAction()">Undo</button>
-        <button class="top-btn" onclick="setLeftView()">Left</button>
-        <button class="top-btn" onclick="setFrontView()">Front</button>
-        <button class="top-btn" onclick="setTopView()">Top</button>
-        <button class="top-btn" onclick="setIsometricView()">3D</button>
-        <button class="top-btn" onclick="saveProject()">Save</button>
-        <button class="top-btn" onclick="loadProject()">Load</button>
-    </div>
     <div id="leftPanel">
         <div id="controls">
             <label>Длина (мм):</label><input type="number" id="length" value="3500" min="100" max="10000"><br>
@@ -27,6 +16,38 @@
             <label>Цвет:</label><input type="color" id="cubeColor" value="#d3d3d3"><br>
             <button onclick="applySize()">Применить</button>
             <button id="kitchenParamsButton">Общие параметры кухни</button>
+            <button onclick="undoLastAction()">Отмена</button>
+            <!-- Скрытая секция параметров кухни -->
+            <div id="kitchenParams" style="display: none;">
+                <h3>Общие параметры кухни</h3>
+                <label>Высота столешницы от пола, мм:</label><input type="number" id="countertopHeight" value="910" min="500" max="1500"><br>
+                <label>Тип столешницы:</label>
+                <select id="countertopType">
+                    <option value="postforming" selected>Постформинг</option>
+                    <option value="compact">Компакт-плита</option>
+                    <option value="quartz">Кварц</option>
+                </select>
+                <label>Толщина, мм:</label><input type="number" id="countertopThickness" value="38" min="5" max="100"><br>
+                <label>Глубина столешницы, мм:</label><input type="number" id="countertopDepth" value="600" min="300" max="1200"><br>
+                <label>Высота цоколя, мм:</label><input type="number" id="plinthHeight" value="100" min="50" max="300"><br>
+                <label>Тип ручек:</label>
+                <select id="handleType">
+                    <option value="standard" selected>Стандартные ручки</option>
+                    <option value="inset">Врезные алюминиевые ручки</option>
+                    <option value="gola">Гола-профиль</option>
+                </select><br>
+                <label>Тип кухни:</label>
+                <select id="kitchenType">
+                    <option value="linear" selected>Линейная</option>
+                    <option value="corner">Угловая</option>
+                    <option value="u-shaped">U-образная</option>
+                </select>
+            </div>
+        </div>
+        <div id="viewControls">
+            <button class="view-btn" onclick="setLeftView()">Left</button>
+            <button class="view-btn" onclick="setFrontView()">Front</button>
+            <button class="view-btn" onclick="setTopView()">Top</button>
         </div>
         <div id="wallEditMenu">
             <h3>Редактирование стены</h3>
@@ -35,11 +56,9 @@
             <button onclick="addObject('radiator')">Радиатор</button>
             <button onclick="addObject('column')">Колонна</button>
             <button onclick="addObject('door')">Дверь</button>
-            <button onclick="addObject('apron')">Фартук</button>
         </div>
         <div id="lowerCabinetContainer" style="display: none;">
             <button class="lower-cabinet" draggable="true">Нижний шкаф</button>
-            <button class="upper-cabinet" draggable="true">Верхний шкаф</button>
         </div>
     </div>
     <div id="canvasContainer">
@@ -81,17 +100,6 @@
             </table>
         </div>
     </div>
-    <div id="hint-bar"></div>
     <script src="script.js"></script>
-    <script>
-        const canvas = document.querySelector('canvas');
-        console.log('Canvas styles:', {
-            width: canvas.style.width || canvas.width,
-            height: canvas.style.height || canvas.height,
-            position: canvas.style.position,
-            top: canvas.style.top,
-            left: canvas.style.left
-        });
-    </script>
 </body>
 </html>

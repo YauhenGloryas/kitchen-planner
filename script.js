@@ -22,6 +22,8 @@ let materials = [];
 let windows = [];
 let cabinets = [];
 let selectedCabinet = null; // Добавляем глобальную переменную
+let selectedCabinets = []; // массив шкафов для множественного выделения
+let countertops = [];
 
 let isRotating = false; // Флаг вращения куба мышью
 let previousMouseX = 0; // Предыдущая позиция мыши по X
@@ -269,6 +271,7 @@ function undoLastAction() {
     rotateXSlider.value = THREE.MathUtils.radToDeg(room.rotationX);
     rotateYSlider.value = THREE.MathUtils.radToDeg(room.rotationY);
     updateRotationDisplay();
+    updateCountertopButtonVisibility();
     updateEdgeColors();
     updateSelectedFaceDisplay();
     updateFaceBounds();
@@ -1584,9 +1587,137 @@ function deleteCabinet(cabinetIndex) {
     hideCabinetMenu();
 }
 
+
+
 function hideCabinetMenu() {
     const menu = document.getElementById('cabinetMenu');
     if (menu) menu.style.display = 'none';
+}
+
+let countertopMenu = null;
+
+function showCountertopMenu(x, y, countertop) {
+    // Удаляем старое меню, если оно есть
+    hideCountertopMenu();
+
+    // Создаём меню
+    countertopMenu = document.createElement('div');
+    countertopMenu.className = 'context-menu';
+    countertopMenu.style.position = 'absolute';
+    countertopMenu.style.background = '#fff';
+    countertopMenu.style.border = '1px solid #ccc';
+    countertopMenu.style.padding = '10px';
+    countertopMenu.style.zIndex = '1000';
+
+    // Поле глубины
+    const depthLabel = document.createElement('label');
+    depthLabel.textContent = 'Глубина (мм): ';
+    const depthInput = document.createElement('input');
+    depthInput.type = 'text';
+    depthInput.value = Math.round(countertop.userData.depth * 1000);
+    depthInput.style.width = '60px';
+    depthLabel.appendChild(depthInput);
+    countertopMenu.appendChild(depthLabel);
+    countertopMenu.appendChild(document.createElement('br'));
+
+    // Выбор материала
+    const materialLabel = document.createElement('label');
+    materialLabel.textContent = 'Материал: ';
+    const materialSelect = document.createElement('select');
+    const options = [
+        { value: 'oak', text: 'Дуб' },
+        { value: 'stone', text: 'Камень' },
+        { value: 'solid', text: 'Однотонная' }
+    ];
+    options.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.text;
+        materialSelect.appendChild(option);
+    });
+    materialSelect.value = countertop.userData.materialType || 'solid';
+    materialLabel.appendChild(materialSelect);
+    countertopMenu.appendChild(materialLabel);
+    countertopMenu.appendChild(document.createElement('br'));
+
+    // Поле цвета
+    const colorLabel = document.createElement('label');
+    colorLabel.textContent = 'Цвет: ';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = countertop.userData.solidColor || '#808080';
+    colorLabel.appendChild(colorInput);
+    countertopMenu.appendChild(colorLabel);
+    countertopMenu.appendChild(document.createElement('br'));
+
+    // Кнопка "Применить"
+    const applyButton = document.createElement('button');
+    applyButton.textContent = 'Применить';
+    applyButton.style.marginTop = '10px';
+    applyButton.addEventListener('click', () => {
+        applyCountertopChanges(countertop, depthInput.value, materialSelect.value, colorInput.value);
+        hideCountertopMenu();
+    });
+    countertopMenu.appendChild(applyButton);
+
+    // Кнопка "Удалить"
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = 'Удалить';
+    deleteButton.style.marginLeft = '10px';
+    deleteButton.addEventListener('click', () => {
+        removeCountertop(countertop);
+        hideCountertopMenu();
+    });
+    countertopMenu.appendChild(deleteButton);
+
+    // Добавляем меню в DOM
+    document.body.appendChild(countertopMenu);
+
+    // Позиционирование с проверкой границ
+    const menuWidth = countertopMenu.offsetWidth;
+    const menuHeight = countertopMenu.offsetHeight;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    let posX = x;
+    let posY = y;
+    if (posX + menuWidth > windowWidth) posX = windowWidth - menuWidth;
+    if (posY + menuHeight > windowHeight) posY = windowHeight - menuHeight;
+    if (posX < 0) posX = 0;
+    if (posY < 0) posY = 0;
+
+    countertopMenu.style.left = `${posX}px`;
+    countertopMenu.style.top = `${posY}px`;
+}
+
+function hideCountertopMenu() {
+    if (countertopMenu) {
+        countertopMenu.remove();
+        countertopMenu = null;
+    }
+}
+
+function removeCountertop(countertop) {
+    if (countertop.userData.edges) {
+        cube.remove(countertop.userData.edges);
+        countertop.userData.edges.geometry.dispose();
+        countertop.userData.edges.material.dispose();
+    }
+    cube.remove(countertop);
+    countertop.geometry.dispose();
+    countertop.material.dispose();
+    // Удаляем из массива countertops
+    const index = countertops.indexOf(countertop);
+    if (index !== -1) countertops.splice(index, 1);
+    // Скрываем поля ввода
+    if (toLeftInput) toLeftInput.remove();
+    if (toRightInput) toRightInput.remove();
+    if (countertopDepthInput) countertopDepthInput.remove();
+    if (distanceLine) {
+        cube.remove(distanceLine);
+        distanceLine.geometry.dispose();
+        distanceLine = null;
+    }
 }
 
 // Проверка пересечений
@@ -2007,17 +2138,20 @@ renderer.domElement.addEventListener('contextmenu', (event) => {
     // Ищем уже выделенный объект (голубой)
     const selectedCabinet = cabinets.find(c => c.mesh.material.color.getHex() === 0x00ffff);
     const selectedWindow = windows.find(w => w.mesh.material.color.getHex() === 0x00ffff);
+    const selectedCountertop = countertops.find(c => c.material.color.getHex() === 0x00ffff);
 
     // Открываем меню только для уже выделенного объекта
     if (selectedCabinet) {
         hideWindowMenu();
         hideSocketMenu();
         hideCabinetMenu();
+        //hideCountertopMenu(); // Добавляем скрытие меню столешницы
         showCabinetMenu(event.clientX, event.clientY, selectedCabinet);
     } else if (selectedWindow) {
         hideWindowMenu();
         hideSocketMenu();
         hideCabinetMenu();
+        hideCountertopMenu(); // Добавляем скрытие меню столешницы
         const groupId = selectedWindow.groupId;
         // Используем selectedWindow как запасной вариант, если группа не найдена
         const firstGroupElement = groupId ? windows.find(w => w.groupId === groupId && w.doorIndex === 0) || selectedWindow : selectedWindow;
@@ -2026,6 +2160,13 @@ renderer.domElement.addEventListener('contextmenu', (event) => {
         } else {
             showWindowMenu(event.clientX, event.clientY, firstGroupElement);
         }
+    } else if (selectedCountertop) {
+        hideWindowMenu();
+        hideSocketMenu();
+        hideCabinetMenu();
+        hideCountertopMenu(); // Скрываем старое меню столешницы, если было
+        showCountertopMenu(event.clientX, event.clientY, selectedCountertop);
+        console.log('try to call countertop menu');
     }
 });
 
@@ -2393,6 +2534,44 @@ function applyCabinetChanges(cabinetIndex) {
 
     // Закрываем меню конфигурации
     hideCabinetMenu();
+}
+
+function applyCountertopChanges(countertop, depthValue, materialType, colorValue) {
+    const newDepthMm = parseFloat(depthValue);
+    const thickness = kitchenGlobalParams.countertopThickness / 1000;
+
+    if (!isNaN(newDepthMm) && newDepthMm >= 100) {
+        countertop.userData.depth = newDepthMm / 1000;
+        countertop.geometry.dispose();
+        countertop.geometry = new THREE.BoxGeometry(countertop.userData.length, thickness, countertop.userData.depth);
+        if (countertop.userData.edges) {
+            countertop.userData.edges.position.copy(countertop.position);
+            countertop.userData.edges.geometry.dispose();
+            countertop.userData.edges.geometry = new THREE.EdgesGeometry(countertop.geometry);
+        }
+    }
+
+    countertop.userData.materialType = materialType;
+    countertop.userData.solidColor = colorValue;
+
+    let newMaterial;
+    if (materialType === 'oak' || materialType === 'stone') {
+        const texturePath = materialType === 'oak' ? 'textures/oak.jpg' : 'textures/stone.jpg';
+        const texture = new THREE.TextureLoader().load(texturePath);
+        newMaterial = new THREE.MeshPhongMaterial({ map: texture });
+    } else if (materialType === 'solid') {
+        newMaterial = new THREE.MeshPhongMaterial({ color: parseInt(colorValue.replace('#', '0x'), 16) });
+    }
+    countertop.material.dispose();
+    countertop.material = newMaterial;
+    countertop.userData.initialMaterial = newMaterial.clone();
+
+    // Обновляем текстуру после изменения материала или геометрии
+    updateTextureScale(countertop);
+
+    if (countertop.material.color.getHex() === 0x00ffff) {
+        updateCountertopDimensionsInputPosition(countertop);
+    }
 }
 
 function addAdjacentSocket(socketIndex, direction) {
@@ -2892,6 +3071,8 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
     if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
     if (toBackInput) { toBackInput.remove(); toBackInput = null; }
 
+    if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
+
     if (!['lowerCabinet', 'upperCabinet'].includes(cabinet.type) || cabinet.mesh.material.color.getHex() !== 0x00ffff) {
         return;
     }
@@ -3046,6 +3227,8 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
     if (toRightInput) { toRightInput.remove(); toRightInput = null; }
     if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
     if (toBackInput) { toBackInput.remove(); toBackInput = null; }
+
+    if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
 
     if (cabinet.type !== 'freestandingCabinet' || cabinet.mesh.material.color.getHex() !== 0x00ffff) {
         return;
@@ -3280,7 +3463,7 @@ function updateDimensionsInputPosition(cabinet, cabinets) {
     const z = cabinet.mesh.position.z;
     const roomLength = currentLength;
     const roomHeight = currentHeight;
-    console.log('x:', x); // Проверяем, получаем ли config
+    //console.log('x:', x); // Проверяем, получаем ли config
 
     if (widthInput) {
         const widthStart = new THREE.Vector3(-cabinet.width / 2, cabinet.height / 2, cabinet.depth / 2);
@@ -3585,9 +3768,498 @@ function updateDimensionsInputPosition(cabinet, cabinets) {
     }
 }
 
+function findNearestObstacles(countertop, cabinets, countertops) {
+    const { length, depth, thickness, wallId } = countertop.userData;
+    const roomWidth = currentLength;
+    const roomDepth = currentHeight;
+    const step = 0.001;
+
+    const originalPosition = countertop.position.clone();
+    const rotationY = countertop.rotation.y;
+    const axis = (wallId === 'Back' || wallId === 'Front') ? 'x' : 'z';
+    const maxSize = (axis === 'x') ? roomWidth : roomDepth;
+
+    let countertopMin, countertopMax;
+    if (wallId === 'Back' || wallId === 'Front') {
+        countertopMin = new THREE.Vector3(
+            originalPosition.x - length / 2,
+            originalPosition.y - thickness / 2,
+            originalPosition.z - depth / 2
+        );
+        countertopMax = new THREE.Vector3(
+            originalPosition.x + length / 2,
+            originalPosition.y + thickness / 2,
+            originalPosition.z + depth / 2
+        );
+    } else if (wallId === 'Left' || wallId === 'Right') {
+        countertopMin = new THREE.Vector3(
+            originalPosition.x - depth / 2,
+            originalPosition.y - thickness / 2,
+            originalPosition.z - length / 2
+        );
+        countertopMax = new THREE.Vector3(
+            originalPosition.x + depth / 2,
+            originalPosition.y + thickness / 2,
+            originalPosition.z + length / 2
+        );
+    }
+
+    const allCabinets = (cabinets || []).filter(c => c && c.mesh && c.mesh.position);
+    const otherCountertops = (countertops || []).filter(c => {
+        const isValid = c && c !== countertop && c.position && c.userData?.type === 'countertop';
+        return isValid;
+    });
+    const obstacles = [...allCabinets, ...otherCountertops];
+
+    let leftBoundary = -maxSize / 2;
+    let rightBoundary = maxSize / 2;
+
+    // Поиск вправо
+    let testPosition = originalPosition.clone();
+    let testMin = countertopMin.clone();
+    let testMax = countertopMax.clone();
+    while (testPosition[axis] < maxSize / 2) {
+        testPosition[axis] += step;
+        testMin[axis] += step;
+        testMax[axis] += step;
+
+        for (const obstacle of obstacles) {
+            if (!obstacle || (!obstacle.position && !obstacle.mesh?.position)) continue;
+
+            obstacle.updateMatrixWorld?.();
+            const obsPos = obstacle.position ? obstacle.position.clone() : obstacle.mesh.position.clone();
+            const obsRotationY = obstacle.rotation?.y || 0;
+            let obsWidth, obsDepth, obsHeight, obsMin, obsMax;
+
+            if (obstacle.userData?.type === 'countertop') {
+                obsWidth = obstacle.userData.length;
+                obsDepth = obstacle.userData.depth;
+                obsHeight = obstacle.userData.thickness;
+            } else {
+                obsWidth = obstacle.width;
+                obsDepth = obstacle.depth;
+                obsHeight = obstacle.height;
+            }
+
+            if (obsRotationY === 0) {
+                obsMin = new THREE.Vector3(obsPos.x - obsWidth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsDepth / 2);
+                obsMax = new THREE.Vector3(obsPos.x + obsWidth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsDepth / 2);
+            } else if (obsRotationY === THREE.MathUtils.degToRad(90) || obsRotationY === THREE.MathUtils.degToRad(-90)) {
+                obsMin = new THREE.Vector3(obsPos.x - obsDepth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsWidth / 2);
+                obsMax = new THREE.Vector3(obsPos.x + obsDepth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsWidth / 2);
+            }
+
+            if (Math.abs(obsPos.x - originalPosition.x) < length / 2 && 
+                Math.abs(obsPos.z - originalPosition.z) < depth / 2 && 
+                obsMax.y < countertopMin.y) continue;
+
+            if (
+                testMax.x > obsMin.x && testMin.x < obsMax.x &&
+                testMax.z > obsMin.z && testMin.z < obsMax.z &&
+                testMin.y < obsMax.y
+            ) {
+                rightBoundary = axis === 'x' ? obsMin.x : obsMin.z;
+                console.log('Right obstacle:', obstacle.userData?.type || obstacle.type, obsPos);
+                break;
+            }
+        }
+        if (rightBoundary !== maxSize / 2) break;
+    }
+
+    // Поиск влево
+    testPosition = originalPosition.clone();
+    testMin = countertopMin.clone();
+    testMax = countertopMax.clone();
+    while (testPosition[axis] > -maxSize / 2) {
+        testPosition[axis] -= step;
+        testMin[axis] -= step;
+        testMax[axis] -= step;
+
+        for (const obstacle of obstacles) {
+            if (!obstacle || (!obstacle.position && !obstacle.mesh?.position)) continue;
+
+            obstacle.updateMatrixWorld?.();
+            const obsPos = obstacle.position ? obstacle.position.clone() : obstacle.mesh.position.clone();
+            const obsRotationY = obstacle.rotation?.y || 0;
+            let obsWidth, obsDepth, obsHeight, obsMin, obsMax;
+
+            if (obstacle.userData?.type === 'countertop') {
+                obsWidth = obstacle.userData.length;
+                obsDepth = obstacle.userData.depth;
+                obsHeight = obstacle.userData.thickness;
+            } else {
+                obsWidth = obstacle.width;
+                obsDepth = obstacle.depth;
+                obsHeight = obstacle.height;
+            }
+
+            if (obsRotationY === 0) {
+                obsMin = new THREE.Vector3(obsPos.x - obsWidth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsDepth / 2);
+                obsMax = new THREE.Vector3(obsPos.x + obsWidth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsDepth / 2);
+            } else if (obsRotationY === THREE.MathUtils.degToRad(90) || obsRotationY === THREE.MathUtils.degToRad(-90)) {
+                obsMin = new THREE.Vector3(obsPos.x - obsDepth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsWidth / 2);
+                obsMax = new THREE.Vector3(obsPos.x + obsDepth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsWidth / 2);
+            }
+
+            if (Math.abs(obsPos.x - originalPosition.x) < length / 2 && 
+                Math.abs(obsPos.z - originalPosition.z) < depth / 2 && 
+                obsMax.y < countertopMin.y) continue;
+
+            if (
+                testMax.x > obsMin.x && testMin.x < obsMax.x &&
+                testMax.z > obsMin.z && testMin.z < obsMax.z &&
+                testMin.y < obsMax.y
+            ) {
+                leftBoundary = axis === 'x' ? obsMax.x : obsMax.z;
+                console.log('Left obstacle:', obstacle.userData?.type || obstacle.type, obsPos);
+                break;
+            }
+        }
+        if (leftBoundary !== -maxSize / 2) break;
+    }
+
+    console.log('Boundaries:', { leftBoundary, rightBoundary });
+    return { leftBoundary, rightBoundary };
+}
+
+let countertopWidthInput, /*toLeftInput, toRightInput,*/ countertopDepthInput;
+let leftBoundaryGlobal, rightBoundaryGlobal;
+
+function showCountertopDimensionsInput(countertop, countertops, cabinets) {
+    const { length, depth, wallId } = countertop.userData;
+    const roomWidth = currentLength; // X
+    const roomDepth = currentHeight; // Z
+    const thickness = kitchenGlobalParams.countertopThickness / 1000; 
+    const countertopDepth = kitchenGlobalParams.countertopDepth / 1000;
+    let leftDistance, rightDistance;
+
+    // Скрываем старые элементы
+    if (widthInput) { widthInput.remove(); widthInput = null; }
+    if (toLeftInput) { toLeftInput.remove(); toLeftInput = null; }
+    if (toRightInput) { toRightInput.remove(); toRightInput = null; }
+    if (depthInput) { depthInput.remove(); depthInput = null; }
+    if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
+    if (distanceLine) { cube.remove(distanceLine); distanceLine.geometry.dispose(); distanceLine = null; }
+    if (distanceLineDepth) { cube.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth = null; }
+
+    // Поиск ближайших препятствий
+    const { leftBoundary, rightBoundary } = findNearestObstacles(countertop, cabinets, countertops);
+    // Расстояния до стен или препятствий
+    if (wallId === 'Back') {
+        leftDistance = ((countertop.position.x - length / 2) - leftBoundary) * 1000;
+        rightDistance = (rightBoundary - (countertop.position.x + length / 2)) * 1000;
+    } else if (wallId === 'Front') {
+        leftDistance = ((countertop.position.x - length / 2) - leftBoundary) * 1000;
+        rightDistance = (rightBoundary - (countertop.position.x + length / 2)) * 1000;
+    } else if (wallId === 'Left') {
+        leftDistance = ((countertop.position.z - length / 2) - leftBoundary) * 1000;
+        rightDistance = (rightBoundary - (countertop.position.z + length / 2)) * 1000;
+    } else if (wallId === 'Right') {
+        leftDistance = ((countertop.position.z - length / 2) - leftBoundary) * 1000;
+        rightDistance = (rightBoundary - (countertop.position.z + length / 2)) * 1000;
+    }
+    
+    // Поле глубины
+    countertopDepthInput = document.createElement('input');
+    countertopDepthInput.type = 'text';
+    countertopDepthInput.value = (depth * 1000).toFixed(0);
+    countertopDepthInput.className = 'dimension-input';
+    renderer.domElement.parentNode.appendChild(countertopDepthInput);
+    attachExpressionValidator(countertopDepthInput);
+
+    countertopDepthInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            const newDepthMm = parseFloat(countertopDepthInput.value);
+            if (!isNaN(newDepthMm) && newDepthMm >= 100) {
+                countertop.userData.depth = newDepthMm / 1000;
+                countertop.geometry.dispose();
+                countertop.geometry = new THREE.BoxGeometry(length, thickness, countertop.userData.depth);
+                // Обновляем ребра
+                if (countertop.userData.edges) {
+                    countertop.userData.edges.geometry.dispose();
+                    countertop.userData.edges.geometry = new THREE.EdgesGeometry(countertop.geometry);
+                    countertop.userData.edges.position.copy(countertop.position); // Синхронизируем позицию
+                }
+                countertopDepthInput.value = Math.round(countertop.userData.depth * 1000);
+                updateTextureScale(countertop);
+
+                updateCountertopDimensionsInputPosition(countertop);
+            }
+            event.stopPropagation();
+        }
+    });
+
+    // Поле расстояния до левого препятствия
+    toLeftInput = document.createElement('input');
+    toLeftInput.type = 'text';
+    toLeftInput.value = Math.round(leftDistance);
+    toLeftInput.className = 'dimension-input';
+    renderer.domElement.parentNode.appendChild(toLeftInput);
+    attachExpressionValidator(toLeftInput);
+
+    toLeftInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            const newDistanceMm = parseFloat(toLeftInput.value);
+            const newDistanceM = newDistanceMm / 1000;
+            const maxDistance = (wallId === 'Back' || wallId === 'Front') 
+                ? roomWidth - (rightBoundary - (countertop.position.x + length / 2)) 
+                : roomDepth - (rightBoundary - (countertop.position.z + length / 2));
+            
+            if (!isNaN(newDistanceMm) && newDistanceM >= 0 && newDistanceM <= maxDistance) {
+                const oldLength = countertop.userData.length;
+                const oldLeftEdge = (wallId === 'Back' || wallId === 'Front') 
+                    ? countertop.position.x - oldLength / 2 
+                    : countertop.position.z - oldLength / 2;
+                const newLeftEdge = leftBoundary + newDistanceM;
+                const newLength = oldLength + (oldLeftEdge - newLeftEdge);
+
+                if (newLength > 0.1) { // Минимальная длина 10 см
+                    countertop.userData.length = newLength;
+                    countertop.geometry.dispose();
+                    countertop.geometry = new THREE.BoxGeometry(newLength, thickness, depth);
+
+                    // Смещаем центр, сохраняя правый край
+                    if (wallId === 'Back' || wallId === 'Front') {
+                        countertop.position.x -= (oldLeftEdge - newLeftEdge) / 2;
+                    } else if (wallId === 'Left' || wallId === 'Right') {
+                        countertop.position.z -= (oldLeftEdge - newLeftEdge) / 2;
+                    }
+
+                    // Обновляем ребра: сначала позиция, потом геометрия
+                    if (countertop.userData.edges) {
+                        countertop.userData.edges.position.copy(countertop.position); // Сначала синхронизируем позицию
+                        countertop.userData.edges.geometry.dispose();
+                        countertop.userData.edges.geometry = new THREE.EdgesGeometry(countertop.geometry); // Потом геометрия
+                    }
+
+                    updateTextureScale(countertop);
+
+                    // Обновляем глобальные границы
+                    const { leftBoundary: newLeftBoundary, rightBoundary: newRightBoundary } = findNearestObstacles(countertop, cabinets, countertops);
+                    leftBoundaryGlobal = newLeftBoundary;
+                    rightBoundaryGlobal = newRightBoundary;
+
+                    // Обновляем значения полей
+                    const newLeftDistance = (wallId === 'Back' || wallId === 'Front') 
+                        ? (countertop.position.x - newLength / 2 - newLeftBoundary) * 1000 
+                        : (countertop.position.z - newLength / 2 - newLeftBoundary) * 1000;
+                    const newRightDistance = (wallId === 'Back' || wallId === 'Front') 
+                        ? (newRightBoundary - (countertop.position.x + newLength / 2)) * 1000 
+                        : (newRightBoundary - (countertop.position.z + newLength / 2)) * 1000;
+                    toLeftInput.value = Math.round(newLeftDistance);
+                    toRightInput.value = Math.round(newRightDistance);
+
+                    updateCountertopDimensionsInputPosition(countertop);
+                } else {
+                    console.log('Error: New length too small:', newLength);
+                }
+            } else {
+                console.log('Error: Invalid distance:', newDistanceM, 'Max:', maxDistance);
+            }
+            event.stopPropagation();
+        }
+    });
+
+    // Поле расстояния до правого препятствия
+    toRightInput = document.createElement('input');
+    toRightInput.type = 'text';
+    toRightInput.value = Math.round(rightDistance);
+    toRightInput.className = 'dimension-input';
+    renderer.domElement.parentNode.appendChild(toRightInput);
+    attachExpressionValidator(toRightInput);
+
+    toRightInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            const newDistanceMm = parseFloat(toRightInput.value);
+            const newDistanceM = newDistanceMm / 1000;
+            const maxDistance = (wallId === 'Back' || wallId === 'Front') 
+                ? roomWidth - (countertop.position.x - length / 2 - leftBoundary) 
+                : roomDepth - (countertop.position.z - length / 2 - leftBoundary);
+            
+            if (!isNaN(newDistanceMm) && newDistanceM >= 0 && newDistanceM <= maxDistance) {
+                const oldLength = countertop.userData.length;
+                const oldRightEdge = (wallId === 'Back' || wallId === 'Front') 
+                    ? countertop.position.x + oldLength / 2 
+                    : countertop.position.z + oldLength / 2;
+                const newRightEdge = rightBoundary - newDistanceM;
+                const newLength = oldLength + (newRightEdge - oldRightEdge);
+
+                if (newLength > 0.1) { // Минимальная длина 10 см
+                    countertop.userData.length = newLength;
+                    countertop.geometry.dispose();
+                    countertop.geometry = new THREE.BoxGeometry(newLength, thickness, depth);
+                    // Смещаем центр, сохраняя левый край
+                    if (wallId === 'Back' || wallId === 'Front') {
+                        countertop.position.x += (newRightEdge - oldRightEdge) / 2;
+                    } else if (wallId === 'Left' || wallId === 'Right') {
+                        countertop.position.z += (newRightEdge - oldRightEdge) / 2;
+                    }
+
+                    // Обновляем ребра: сначала позиция, потом геометрия
+                    if (countertop.userData.edges) {
+                        countertop.userData.edges.position.copy(countertop.position); // Сначала синхронизируем позицию
+                        countertop.userData.edges.geometry.dispose();
+                        countertop.userData.edges.geometry = new THREE.EdgesGeometry(countertop.geometry); // Потом геометрия
+                    }
+
+                    updateTextureScale(countertop);
+
+                    // Обновляем глобальные границы
+                    const { leftBoundary: newLeftBoundary, rightBoundary: newRightBoundary } = findNearestObstacles(countertop, cabinets, countertops);
+                    leftBoundaryGlobal = newLeftBoundary;
+                    rightBoundaryGlobal = newRightBoundary;
+
+                    // Обновляем значения полей
+                    const newLeftDistance = (wallId === 'Back' || wallId === 'Front') 
+                        ? (countertop.position.x - newLength / 2 - newLeftBoundary) * 1000 
+                        : (countertop.position.z - newLength / 2 - newLeftBoundary) * 1000;
+                    const newRightDistance = (wallId === 'Back' || wallId === 'Front') 
+                        ? (newRightBoundary - (countertop.position.x + newLength / 2)) * 1000 
+                        : (newRightBoundary - (countertop.position.z + newLength / 2)) * 1000;
+                    toLeftInput.value = Math.round(newLeftDistance);
+                    toRightInput.value = Math.round(newRightDistance);
+
+                    updateCountertopDimensionsInputPosition(countertop);
+                } else {
+                    console.log('Error: New length too small:', newLength);
+                }
+            } else {
+                console.log('Error: Invalid distance:', newDistanceM, 'Max:', maxDistance);
+            }
+            event.stopPropagation();
+        }
+    });
+
+    // Размерная линия от левого препятствия до правого
+    const lineGeometry = new THREE.BufferGeometry();
+    let vertices;
+
+    if (wallId === 'Back') {
+        vertices = new Float32Array([
+            leftBoundary, countertop.position.y + thickness / 2, countertop.position.z + depth / 2,
+            rightBoundary, countertop.position.y + thickness / 2, countertop.position.z + depth / 2
+        ]);
+    } else if (wallId === 'Front') {
+        vertices = new Float32Array([
+            leftBoundary, countertop.position.y + thickness / 2, countertop.position.z - depth / 2,
+            rightBoundary, countertop.position.y + thickness / 2, countertop.position.z - depth / 2
+        ]);
+    } else if (wallId === 'Left') {
+        vertices = new Float32Array([
+            countertop.position.x + depth / 2, countertop.position.y + thickness / 2, leftBoundary,
+            countertop.position.x + depth / 2, countertop.position.y + thickness / 2, rightBoundary
+        ]);
+    } else if (wallId === 'Right') {
+        vertices = new Float32Array([
+            countertop.position.x - depth / 2, countertop.position.y + thickness / 2, leftBoundary,
+            countertop.position.x - depth / 2, countertop.position.y + thickness / 2, rightBoundary
+        ]);
+    }
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
+    distanceLine = new THREE.Line(lineGeometry, lineMaterial);
+    cube.add(distanceLine);
+    leftBoundaryGlobal = leftBoundary;
+    rightBoundaryGlobal = rightBoundary;
+    updateCountertopDimensionsInputPosition(countertop);
+}
+
+function updateCountertopDimensionsInputPosition(countertop) {
+    const { length, depth, thickness, wallId } = countertop.userData;
+    const canvasRect = renderer.domElement.getBoundingClientRect();
+    const roomWidth = currentLength; // X
+    const roomDepth = currentHeight; // Z
+
+    // Поле глубины (по центру верхнего правого ребра)
+    if (countertopDepthInput) {
+        const depthStart = new THREE.Vector3(length / 2, thickness / 2, -depth / 2);
+        const depthEnd = new THREE.Vector3(length / 2, thickness / 2, depth / 2);
+        const depthCenter = depthStart.clone().lerp(depthEnd, 0.5);
+        depthCenter.applyMatrix4(countertop.matrixWorld);
+        depthCenter.project(camera);
+
+        const screenX = (depthCenter.x + 1) * canvasRect.width / 2 + canvasRect.left;
+        const screenY = (-depthCenter.y + 1) * canvasRect.height / 2 + canvasRect.top;
+        const finalX = screenX - canvasRect.left;
+        const finalY = screenY - canvasRect.top;
+
+        countertopDepthInput.style.left = `${finalX - countertopDepthInput.offsetWidth / 2}px`;
+        countertopDepthInput.style.top = `${finalY - countertopDepthInput.offsetHeight / 2}px`;
+    }
+
+    // Поле расстояния до левой стены (на левой верхней вершине, ближе к камере)
+    if (toLeftInput) {
+        let leftTopFront;
+
+        if (wallId === 'Back') {
+            leftTopFront = new THREE.Vector3(
+                -length / 2 - (-leftBoundaryGlobal + countertop.position.x - length / 2) / 2,    // Левый край
+                thickness / 2,  // Верхняя грань
+                depth / 2      // Передний край (к камере, ближе к Front)
+            );
+        } else if (wallId === 'Front') {
+            leftTopFront = new THREE.Vector3(
+                -length / 2,    // Левый край
+                thickness / 2,  // Верхняя грань
+                depth / 2       // Передний край (к камере, ближе к Back)
+            );
+        } else if (wallId === 'Left') {
+            leftTopFront = new THREE.Vector3(
+                length / 2 + (-leftBoundaryGlobal + countertop.position.z - length / 2) / 2,     // Левый край (глубина становится X)
+                thickness / 2,  // Верхняя грань
+                depth / 2  // Передний край (длина становится Z)
+            );
+        } else if (wallId === 'Right') {
+            leftTopFront = new THREE.Vector3(
+                length / 2 + (-leftBoundaryGlobal + countertop.position.z - length / 2) / 2,      // Левый край (глубина становится X, поворот меняет знак)
+                thickness / 2,  // Верхняя грань
+                -depth / 2     // Передний край (длина становится Z)
+            );
+        }
+
+        leftTopFront.applyMatrix4(countertop.matrixWorld);
+        leftTopFront.project(camera);
+
+        const screenX = (leftTopFront.x + 1) * canvasRect.width / 2 + canvasRect.left;
+        const screenY = (-leftTopFront.y + 1) * canvasRect.height / 2 + canvasRect.top;
+        const finalX = screenX - canvasRect.left;
+        const finalY = screenY - canvasRect.top;
+
+        toLeftInput.style.left = `${finalX - toLeftInput.offsetWidth / 2}px`;
+        toLeftInput.style.top = `${finalY - toLeftInput.offsetHeight / 2}px`;
+    }
+    // Поле расстояния до правой стены (на правой верхней вершине, ближе к камере)
+    if (toRightInput) {
+        let rightTopFront;
+        if (wallId === 'Back') {
+            rightTopFront = new THREE.Vector3(length / 2 + (rightBoundaryGlobal - countertop.position.x - length / 2) / 2, thickness / 2, depth / 2);
+        } else if (wallId === 'Front') {
+            rightTopFront = new THREE.Vector3(length / 2, thickness / 2, depth / 2);
+        } else if (wallId === 'Left') {
+            rightTopFront = new THREE.Vector3(-length / 2 - (rightBoundaryGlobal - countertop.position.z - length / 2) / 2, thickness / 2, depth / 2);
+        } else if (wallId === 'Right') {
+            rightTopFront = new THREE.Vector3(-length / 2 - (rightBoundaryGlobal - countertop.position.z - length / 2) / 2, thickness / 2, -depth / 2);
+        }
+        rightTopFront.applyMatrix4(countertop.matrixWorld);
+        rightTopFront.project(camera);
+
+        const screenX = (rightTopFront.x + 1) * canvasRect.width / 2 + canvasRect.left;
+        const screenY = (-rightTopFront.y + 1) * canvasRect.height / 2 + canvasRect.top;
+        const finalX = screenX - canvasRect.left;
+        const finalY = screenY - canvasRect.top;
+
+        toRightInput.style.left = `${finalX - toRightInput.offsetWidth / 2}px`;
+        toRightInput.style.top = `${finalY - toRightInput.offsetHeight / 2}px`;
+    }
+}
+
+
+
 
 // Обработчик кликов для выделения объектов и стен
+// Обработчик кликов для выделения объектов и стен
 renderer.domElement.addEventListener('click', (event) => {
+    console.log('Click handler triggered:', event.clientX, event.clientY);
     if (!cube || justDragged) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
@@ -3596,11 +4268,11 @@ renderer.domElement.addEventListener('click', (event) => {
 
     raycaster.setFromCamera(mouse, camera);
 
-    const allObjects = [...cabinets.map(c => c.mesh), ...windows.map(w => w.mesh)];
+    const allObjects = [...cabinets.map(c => c.mesh), ...windows.map(w => w.mesh), ...countertops];
     const objectIntersects = raycaster.intersectObjects(allObjects, true);
     const wallIntersects = raycaster.intersectObject(cube, false);
 
-    // Сбрасываем выделение всех объектов перед новой обработкой
+    // Сбрасываем выделение, сохраняя материалы
     windows.forEach(w => {
         w.mesh.material.color.set(w.initialColor);
         w.edges.material.color.set(0x000000);
@@ -3614,13 +4286,23 @@ renderer.domElement.addEventListener('click', (event) => {
         c.mesh.material.needsUpdate = true;
         c.edges.material.needsUpdate = true;
     });
+    countertops.forEach(c => {
+        if (!c.userData.initialMaterial) {
+            c.userData.initialMaterial = c.material.clone();
+        }
+        if (c.material.color.getHex() === 0x00ffff && !selectedCabinets.includes(c)) {
+            console.log('Restoring countertop material:', c.userData.materialType, c.userData.solidColor);
+            c.material.dispose();
+            c.material = c.userData.initialMaterial.clone();
+        }
+    });
     selectedFaceIndex = -1;
 
-    // Скрываем все меню и поле ширины
+    // Скрываем все меню и поля ввода
     hideWindowMenu();
     hideSocketMenu();
     hideCabinetMenu();
-    // Удаляем старые элементы
+    hideCountertopMenu();
     if (widthInput) { widthInput.remove(); widthInput = null; }
     if (depthInput) { depthInput.remove(); depthInput = null; }
     if (heightInput) { heightInput.remove(); heightInput = null; }
@@ -3630,28 +4312,128 @@ renderer.domElement.addEventListener('click', (event) => {
     if (toRightInput) { toRightInput.remove(); toRightInput = null; }
     if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
     if (toBackInput) { toBackInput.remove(); toBackInput = null; }
+    if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
 
     if (objectIntersects.length > 0) {
         const intersect = objectIntersects[0];
         const hitCabinet = cabinets.find(c => c.mesh === intersect.object);
         const hitWindow = windows.find(w => w.mesh === intersect.object);
+        const hitCountertop = countertops.find(c => c === intersect.object);
 
-        if (hitCabinet) {
-            selectedCabinet = hitCabinet; // Устанавливаем выделение
-            console.log('Selected cabinet on click:', selectedCabinet);
-            hitCabinet.mesh.material.color.set(0x00ffff);
-            hitCabinet.edges.material.color.set(0xff00ff);
-            hitCabinet.mesh.material.needsUpdate = true;
-            hitCabinet.edges.material.needsUpdate = true;
-            lastSelectedCabinet = null; // Сбрасываем для обновления
-            lastCabinetState = null;
-            if (['lowerCabinet', 'upperCabinet'].includes(hitCabinet.type) && hitCabinet.wallId) {
-                showCabinetDimensionsInput(hitCabinet, cabinets);
-            } else if (hitCabinet.type === 'freestandingCabinet') {
-                showFreestandingCabinetDimensions(hitCabinet, cabinets);
+        if (hitCountertop) {
+            if (!hitCountertop.userData.initialMaterial) {
+                hitCountertop.userData.initialMaterial = hitCountertop.material.clone();
+            }
+            if (event.ctrlKey) {
+                const index = selectedCabinets.indexOf(hitCountertop);
+                if (index === -1) {
+                    selectedCabinets.push(hitCountertop);
+                } else {
+                    selectedCabinets.splice(index, 1);
+                }
+            } else {
+                selectedCabinets = [hitCountertop];
+                showCountertopDimensionsInput(hitCountertop, countertops, cabinets);
+            }
+            cabinets.forEach(c => {
+                if (selectedCabinets.includes(c)) {
+                    c.mesh.material.color.set(0x00ffff);
+                    c.edges.material.color.set(0xff00ff);
+                } else {
+                    const hasIntersection = checkCabinetIntersections(c);
+                    c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
+                    c.edges.material.color.set(0x000000);
+                }
+                c.mesh.material.needsUpdate = true;
+                c.edges.material.needsUpdate = true;
+            });
+            countertops.forEach(c => {
+                if (selectedCabinets.includes(c)) {
+                    c.material.color.set(0x00ffff); // Только выделение
+                } else if (c.material.color.getHex() === 0x00ffff) {
+                    c.material.dispose();
+                    c.material = c.userData.initialMaterial.clone();
+                }
+                c.material.needsUpdate = true;
+            });
+        } else if (hitCabinet) {
+            if (event.ctrlKey) {
+                const index = selectedCabinets.indexOf(hitCabinet);
+                if (index === -1) {
+                    selectedCabinets.push(hitCabinet);
+                } else {
+                    selectedCabinets.splice(index, 1);
+                }
+                cabinets.forEach(c => {
+                    if (selectedCabinets.includes(c)) {
+                        c.mesh.material.color.set(0x00e0e0);
+                        c.edges.material.color.set(0xff00ff);
+                    } else {
+                        const hasIntersection = checkCabinetIntersections(c);
+                        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
+                        c.edges.material.color.set(0x000000);
+                    }
+                    c.mesh.material.needsUpdate = true;
+                    c.edges.material.needsUpdate = true;
+                });
+                countertops.forEach(c => {
+                    if (selectedCabinets.includes(c)) {
+                        c.material.color.set(0x00e0e0);
+                    } else if (c.material.color.getHex() === 0x00ffff) {
+                        c.material.dispose();
+                        c.material = c.userData.initialMaterial.clone();
+                    }
+                    c.material.needsUpdate = true;
+                });
+                if (selectedCabinets.length === 1) {
+                    selectedCabinet = hitCabinet;
+                    if (['lowerCabinet', 'upperCabinet'].includes(hitCabinet.type) && hitCabinet.wallId) {
+                        showCabinetDimensionsInput(hitCabinet, cabinets);
+                    } else if (hitCabinet.type === 'freestandingCabinet') {
+                        showFreestandingCabinetDimensions(hitCabinet, cabinets);
+                    }
+                }
+            } else {
+                selectedCabinets = [hitCabinet];
+                selectedCabinet = hitCabinet;
+                cabinets.forEach(c => {
+                    if (c === hitCabinet) {
+                        c.mesh.material.color.set(0x00ffff);
+                        c.edges.material.color.set(0xff00ff);
+                    } else {
+                        const hasIntersection = checkCabinetIntersections(c);
+                        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
+                        c.edges.material.color.set(0x000000);
+                    }
+                    c.mesh.material.needsUpdate = true;
+                    c.edges.material.needsUpdate = true;
+                });
+                countertops.forEach(c => {
+                    if (c.material.color.getHex() === 0x00ffff) {
+                        c.material.dispose();
+                        c.material = c.userData.initialMaterial.clone();
+                    }
+                    c.material.needsUpdate = true;
+                });
+                lastSelectedCabinet = null;
+                lastCabinetState = null;
+                if (['lowerCabinet', 'upperCabinet'].includes(hitCabinet.type) && hitCabinet.wallId) {
+                    showCabinetDimensionsInput(hitCabinet, cabinets);
+                } else if (hitCabinet.type === 'freestandingCabinet') {
+                    showFreestandingCabinetDimensions(hitCabinet, cabinets);
+                }
             }
         } else if (hitWindow) {
-            selectedCabinet = null; // Сбрасываем при выборе окна
+            selectedCabinets = [];
+            selectedCabinet = null;
+            // Сбрасываем выделение столешниц при клике по окну
+            countertops.forEach(c => {
+            if (c.material.color.getHex() === 0x00ffff) {
+                c.material.dispose();
+                c.material = c.userData.initialMaterial.clone();
+                c.material.needsUpdate = true;
+            }
+        });
             const groupId = hitWindow.groupId;
             if (groupId) {
                 windows.forEach(w => {
@@ -3670,7 +4452,16 @@ renderer.domElement.addEventListener('click', (event) => {
             }
         }
     } else if (wallIntersects.length > 0) {
-        selectedCabinet = null; // Сбрасываем при клике на стену
+        selectedCabinets = [];
+        selectedCabinet = null;
+        // Сбрасываем выделение столешниц при клике на стену
+        countertops.forEach(c => {
+            if (c.material.color.getHex() === 0x00ffff) {
+                c.material.dispose();
+                c.material = c.userData.initialMaterial.clone();
+                c.material.needsUpdate = true;
+            }
+        });
         const intersect = wallIntersects[0];
         const normal = intersect.face.normal.clone().applyEuler(cube.rotation);
         const cameraDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -3699,10 +4490,28 @@ renderer.domElement.addEventListener('click', (event) => {
                 }
             }
         });
+    } else {
+        selectedCabinets = [];
+        selectedCabinet = null;
+        // Сбрасываем выделение столешниц при клике в пустоту
+        countertops.forEach(c => {
+            if (c.material.color.getHex() === 0x00ffff) {
+                c.material.dispose();
+                c.material = c.userData.initialMaterial.clone();
+                c.material.needsUpdate = true;
+            }
+        });
     }
 
+    console.log('Before updateHint');
+    updateHint(selectedCabinets.length > 0 ? 'Выделено шкафов: ' + selectedCabinets.length : 'Выделите шкафы');
+    console.log('Before updateCountertopButtonVisibility');
+    updateCountertopButtonVisibility();
+    console.log('Before updateEdgeColors');
     updateEdgeColors();
+    console.log('Before updateSelectedFaceDisplay');
     updateSelectedFaceDisplay();
+    console.log('After all updates');
 });
 
 // Новый обработчик для начала перетаскивания
@@ -3823,41 +4632,50 @@ function animate() {
     const isRotating = cube.rotation.y !== lastRotationY;
     const isDragging = !!draggedCabinet;
     let isPositionChanged = false;
-    if (selectedCabinet) {
-        if (selectedCabinet.type === 'freestandingCabinet') {
-            isPositionChanged = lastOffsetX !== selectedCabinet.offsetX || lastOffsetZ !== selectedCabinet.offsetZ;
+
+    // Проверка изменений для выбранного объекта
+    if (selectedCabinets.length === 1) {
+        const selectedObject = selectedCabinets[0];
+        if (selectedObject.userData && selectedObject.userData.type === 'countertop') {
+            // Для столешницы пока не отслеживаем позицию, но можем добавить позже
+            isPositionChanged = false; // Пока не меняем позицию столешницы
+        } else if (selectedObject.type === 'freestandingCabinet') {
+            isPositionChanged = lastOffsetX !== selectedObject.offsetX || lastOffsetZ !== selectedObject.offsetZ;
         } else {
-            isPositionChanged = lastOffsetAlongWall !== selectedCabinet.offsetAlongWall;
+            isPositionChanged = lastOffsetAlongWall !== selectedObject.offsetAlongWall;
         }
     }
 
-    if (isDragging && cabinets) {
-        //console.log('Updating for draggedCabinet', draggedCabinet);
+    // Обновление размеров
+    if (isDragging && draggedCabinet) {
         updateDimensionsInputPosition(draggedCabinet, cabinets);
-    } else if (selectedCabinet && cabinets && (isRotating || isDragging || isPositionChanged)) {
-        //console.log('Updating for selectedCabinet', selectedCabinet);
-        updateDimensionsInputPosition(selectedCabinet, cabinets);
-    } else if (selectedCabinet && (selectedCabinet !== lastSelectedCabinet || cabinets.length !== lastCabinetsLength)) {
-        //console.log('Scene state changed, updating selectedCabinet', selectedCabinet);
-        updateDimensionsInputPosition(selectedCabinet, cabinets);
-    }
-
-    lastRotationY = cube.rotation.y;
-    lastSelectedCabinet = selectedCabinet;
-    lastCabinetsLength = cabinets.length;
-    if (selectedCabinet) {
-        if (selectedCabinet.type === 'freestandingCabinet') {
-            lastOffsetX = selectedCabinet.offsetX;
-            lastOffsetZ = selectedCabinet.offsetZ;
-        } else {
-            lastOffsetAlongWall = selectedCabinet.offsetAlongWall;
+    } else if (selectedCabinets.length === 1) {
+        const selectedObject = selectedCabinets[0];
+        if (selectedObject.userData && selectedObject.userData.type === 'countertop' && (isRotating || isDragging || isPositionChanged)) {
+            updateCountertopDimensionsInputPosition(selectedObject);
+        } else if (selectedObject && cabinets && (isRotating || isDragging || isPositionChanged)) {
+            updateDimensionsInputPosition(selectedObject, cabinets);
         }
     }
 
-    if (isRotating || isDragging || isPositionChanged || selectedCabinet !== lastSelectedCabinet || cabinets.length !== lastCabinetsLength) {
-        //console.log('Scene active:', { isRotating, isDragging, isPositionChanged, selectedCabinet, cabinets });
-    } else if (!selectedCabinet && (selectedCabinet !== lastSelectedCabinet || cabinets.length !== lastCabinetsLength)) {
-        //console.log('No cabinet selected or dragged', { selectedCabinet, cabinets });
+    // Сохранение состояния
+    lastRotationY = cube.rotation.y;
+    if (selectedCabinets.length === 1) {
+        const selectedObject = selectedCabinets[0];
+        if (selectedObject.type === 'freestandingCabinet') {
+            lastOffsetX = selectedObject.offsetX;
+            lastOffsetZ = selectedObject.offsetZ;
+        } else if (!selectedObject.userData || selectedObject.userData.type !== 'countertop') {
+            lastOffsetAlongWall = selectedObject.offsetAlongWall;
+        }
+    }
+    lastSelectedCabinet = selectedCabinets.length === 1 ? selectedCabinets[0] : null;
+    lastCabinetsLength = cabinets.length;
+
+    if (isRotating || isDragging || isPositionChanged || (selectedCabinets.length === 1 && selectedCabinets[0] !== lastSelectedCabinet) || cabinets.length !== lastCabinetsLength) {
+        //console.log('Scene active:', { isRotating, isDragging, isPositionChanged, selectedCabinets, cabinets });
+    } else if (selectedCabinets.length === 0 && (selectedCabinets.length !== (lastSelectedCabinet ? 1 : 0) || cabinets.length !== lastCabinetsLength)) {
+        //console.log('No object selected or dragged', { selectedCabinets, cabinets });
     }
 }
 
@@ -4842,3 +5660,191 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     updateFaceBounds();
 });
+
+function updateCountertopButtonVisibility() {
+    const hasLowerCabinet = selectedCabinets.some(cab =>
+        (cab.type === 'lowerCabinet' && !cab.isHeightIndependent) ||
+        (cab.type === 'freestandingCabinet' && cab.height <= kitchenGlobalParameters.standardHeight)
+    );
+    countertopButton.style.display = hasLowerCabinet ? 'block' : 'none';
+}
+
+const hintBar = document.getElementById('hint-bar');
+function updateHint(text) {
+    hintBar.textContent = text;
+}
+
+const countertopButton = document.createElement('button');
+countertopButton.id = 'countertop-button';
+countertopButton.textContent = 'Добавить столешницу';
+document.getElementById('leftPanel').appendChild(countertopButton);
+
+countertopButton.addEventListener('click', () => {
+    if (selectedCabinets.length === 0) {
+        updateHint('Выделите хотя бы один шкаф!');
+        return;
+    }
+
+    const anchorCabinet = selectedCabinets[0];
+    const isLowerAnchor = (anchorCabinet.type === 'lowerCabinet' && !anchorCabinet.isHeightIndependent) ||
+                          (anchorCabinet.type === 'freestandingCabinet' && anchorCabinet.height <= kitchenGlobalParams.standardHeight);
+
+    if (!isLowerAnchor) {
+        updateHint('Первый выделенный шкаф должен быть нижним!');
+        return;
+    }
+
+    const filteredCabinets = selectedCabinets.filter(cab => {
+        const isLower = (cab.type === 'lowerCabinet' && !cab.isHeightIndependent) ||
+                        (cab.type === 'freestandingCabinet' && cab.height <= kitchenGlobalParams.standardHeight);
+        if (!isLower) return false;
+
+        if (anchorCabinet.wallId) {
+            return cab.wallId === anchorCabinet.wallId;
+        } else if (anchorCabinet.type === 'freestandingCabinet') {
+            return selectedCabinets.some(c => {
+                const box1 = new THREE.Box3().setFromObject(c.mesh);
+                const box2 = new THREE.Box3().setFromObject(cab.mesh);
+                return box1.intersectsBox(box2);
+            });
+        }
+        return false;
+    });
+
+    if (filteredCabinets.length === 0) {
+        updateHint('Нет подходящих нижних шкафов для столешницы!');
+        return;
+    }
+
+    selectedCabinets = filteredCabinets;
+    cabinets.forEach(c => {
+        if (selectedCabinets.includes(c)) {
+            c.mesh.material.color.set(0x00e0e0);
+            c.edges.material.color.set(0xff00ff);
+        } else {
+            const hasIntersection = checkCabinetIntersections(c);
+            c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
+            c.edges.material.color.set(0x000000);
+        }
+        c.mesh.material.needsUpdate = true;
+        c.edges.material.needsUpdate = true;
+    });
+
+    createCountertop(selectedCabinets);
+});
+
+function createCountertop(selectedCabinets) {
+    if (selectedCabinets.length === 0) return;
+
+    const anchorCabinet = selectedCabinets[0];
+    if (!anchorCabinet.wallId) {
+        updateHint('Столешница для свободно стоящих шкафов будет добавлена позже.');
+        console.log('Ожидаем логику для freestandingCabinet');
+        return;
+    }
+
+    // Определяем размеры столешницы
+    const wallId = anchorCabinet.wallId;
+    const wallCabinets = selectedCabinets.filter(cab => cab.wallId === wallId);
+    const positions = wallCabinets.map(cab => cab.offsetAlongWall);
+    const minOffset = Math.min(...positions);
+    const maxOffset = Math.max(...positions) + wallCabinets.find(cab => cab.offsetAlongWall === Math.max(...positions)).width;
+    const length = maxOffset - minOffset; // В метрах
+    const depth = kitchenGlobalParams.countertopDepth / 1000; // мм -> м
+    const thickness = kitchenGlobalParams.countertopThickness / 1000; // мм -> м
+    const countertopType = kitchenGlobalParams.countertopType;
+
+    // Высота столешницы: центр шкафа + половина высоты
+    const cabinetCenterY = anchorCabinet.mesh.position.y; // Центр по y
+    const cabinetHeight = anchorCabinet.height; // Высота шкафа в метрах
+    const cabinetTopY = cabinetCenterY + cabinetHeight / 2; // Верхняя грань
+
+    // Размеры комнаты в метрах
+    const roomWidth = currentLength;  // X, ширина комнаты
+    const roomDepth = currentHeight;  // Z, глубина комнаты
+
+    // Геометрия и материал
+    const geometry = new THREE.BoxGeometry(length, thickness, depth);
+    const material = new THREE.MeshPhongMaterial({ color: 0x808080 }); // Коричневый
+    const countertop = new THREE.Mesh(geometry, material);
+
+    // Позиция в локальной системе cube
+    let x, y, z;
+    y = cabinetTopY + thickness / 2; // Нижняя грань столешницы = верх шкафа
+    if (wallId === 'Back') {
+        x = minOffset + length / 2 - roomWidth / 2; // Центр по ширине
+        z = -roomDepth / 2 + depth / 2; // Центр столешницы от задней стены
+    } else if (wallId === 'Front') {
+        x = minOffset + length / 2 - roomWidth / 2;
+        z = roomDepth / 2 - depth / 2; // Центр столешницы от передней стены
+    } else if (wallId === 'Left') {
+        x = -roomWidth / 2 + depth / 2; // Центр столешницы от левой стены
+        z = minOffset + length / 2 - roomDepth / 2;
+        countertop.rotation.y = Math.PI / 2;
+    } else if (wallId === 'Right') {
+        x = roomWidth / 2 - depth / 2; // Центр столешницы от правой стены
+        z = minOffset + length / 2 - roomDepth / 2;
+        countertop.rotation.y = Math.PI / 2;
+    }
+
+    countertop.position.set(x, y, z);
+    // Заполняем userData с учётом countertopType
+    countertop.userData = { 
+        type: 'countertop', 
+        wallId: wallId, 
+        length: length, 
+        depth: depth, 
+        thickness: thickness,
+        countertopType: countertopType, // Добавили тип столешницы
+        materialType: 'solid', // Начальный тип материала
+        solidColor: '#808080',  // Начальный цвет
+        initialMaterial: material.clone() // Сохраняем начальный материал
+    };
+    cube.add(countertop); // Добавляем в cube
+    countertops.push(countertop);
+    console.log('Countertops array:', countertops); // Проверим
+
+    // Edges
+    const edgesGeometry = new THREE.EdgesGeometry(geometry);
+    const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+    const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+    cube.add(edges); // Вместо countertop.add(edges)
+    edges.position.copy(countertop.position);
+    edges.rotation.copy(countertop.rotation);
+
+    // Сохраняем ссылку на ребра в userData
+    countertop.userData.edges = edges;
+
+    //console.log('Countertop geometry:', geometry.parameters);
+    //console.log('Countertop position:', countertop.position);
+    const box = new THREE.Box3().setFromObject(countertop);
+    //console.log('Countertop bounding box (mesh only):', box);
+    const fullBox = new THREE.Box3().setFromObject(cube);
+    //console.log('Full cube bounding box:', fullBox);
+
+    updateHint('Столешница добавлена! Длина: ' + (length * 1000).toFixed(0) + ' мм');
+    //console.log('Countertop created:', countertop);
+    //console.log('Anchor cabinet position:', anchorCabinet.mesh.position);
+    //console.log('Anchor cabinet height:', anchorCabinet.height);
+    //console.log('Countertop position:', countertop.position);
+    //console.log('Room dimensions (width, depth):', roomWidth, roomDepth);
+
+}
+
+function updateTextureScale(countertop) {
+    if (countertop.userData.materialType === 'oak' || countertop.userData.materialType === 'stone') {
+        const textureWidth = 2.8;  // 1300 мм
+        const textureDepth = 1.3;  // 2800 мм
+        const countertopWidth = countertop.userData.length;
+        const countertopDepth = countertop.userData.depth;
+
+        const texture = countertop.material.map;
+        if (texture) {
+            texture.rotation = Math.PI / 2; // Поворот на 90 градусов
+            texture.repeat.set(countertopDepth / textureDepth, countertopWidth / textureWidth);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            countertop.material.needsUpdate = true;
+        }
+    }
+}
