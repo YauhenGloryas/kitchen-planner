@@ -1046,6 +1046,7 @@ function attachExpressionValidator(input) {
             try {
                 let result = eval(newValue); // Вычисляем результат
                 if (isNaN(result) || result < parseFloat(input.dataset.min)) {
+                    console.log(input.dataset.min);
                     alert(`Значение должно быть числом не меньше ${input.dataset.min}!`);
                     input.value = lastValidValue;
                 } else {
@@ -1136,10 +1137,10 @@ function showWindowMenu(x, y, window) {
         }
 
         html += `
-            <label>Ширина полотна, мм: <input type="text" id="doorCanvasWidth" value="${Math.round(doorCanvas.width * 1000)}" data-min="100" style="width: 100px; border-radius: 3px;"></label>
-            <label>Высота полотна, мм: <input type="text" id="doorCanvasHeight" value="${Math.round(doorCanvas.height * 1000)}" data-min="100" style="width: 100px; border-radius: 3px;"></label>
-            <label>Ширина наличника, мм: <input type="text" id="doorFrameWidth" value="${Math.round(doorFrameLeft.width * 1000)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
-            <label>Толщина наличника, мм: <input type="text" id="doorFrameThickness" value="${Math.round(doorFrameLeft.depth * 1000)}" data-min="5" style="width: 100px; border-radius: 3px;"></label>
+            <label>Ширина полотна, мм: <input type="text" id="doorCanvasWidth" value="${Math.round(doorCanvas.width * 1000)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
+            <label>Высота полотна, мм: <input type="text" id="doorCanvasHeight" value="${Math.round(doorCanvas.height * 1000)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
+            <label>Ширина наличника, мм: <input type="text" id="doorFrameWidth" value="${Math.round(doorFrameLeft.width * 1000)}" data-min="5" style="width: 100px; border-radius: 3px;"></label>
+            <label>Толщина наличника, мм: <input type="text" id="doorFrameThickness" value="${Math.round(doorFrameLeft.depth * 1000)}" data-min="1" style="width: 100px; border-radius: 3px;"></label>
             <label>Отступ от угла, мм: <input type="text" id="dooroffsetAlongWall" value="${Math.round(doorCanvas.offsetAlongWall * 1000)}" data-min="0" style="width: 100px; border-radius: 3px;"></label>
             <label>Отступ от пола, мм: <input type="text" id="doorOffsetBottom" value="${Math.round(doorCanvas.offsetBottom * 1000)}" data-min="0" style="width: 100px; border-radius: 3px;"></label>
         `;
@@ -1151,9 +1152,9 @@ function showWindowMenu(x, y, window) {
     `;
     } else {
         html += `
-            <label>Ширина, мм: <input type="text" id="windowWidth" value="${Math.round(windowWidth)}" data-min="100" style="width: 100px; border-radius: 3px;"></label>
-            <label>Высота, мм: <input type="text" id="windowHeight" value="${Math.round(windowHeight)}" data-min="100" style="width: 100px; border-radius: 3px;"></label>
-            <label>Глубина, мм: <input type="text" id="windowDepth" value="${Math.round(windowDepth)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
+            <label>Ширина, мм: <input type="text" id="windowWidth" value="${Math.round(windowWidth)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
+            <label>Высота, мм: <input type="text" id="windowHeight" value="${Math.round(windowHeight)}" data-min="10" style="width: 100px; border-radius: 3px;"></label>
+            <label>Глубина, мм: <input type="text" id="windowDepth" value="${Math.round(windowDepth)}" data-min="5" style="width: 100px; border-radius: 3px;"></label>
             <label>От стены, мм: <input type="text" id="windowoffsetAlongWallEdge" value="${offsetAlongWall}" data-min="0" style="width: 100px; border-radius: 3px;"></label>
             <label>От пола, мм: <input type="text" id="windowOffsetBottomEdge" value="${offsetBottom}" data-min="0" style="width: 100px; border-radius: 3px;"></label>
             <label>Отступ от стены, мм: <input type="text" id="windowoffsetFromParentWall" value="${offsetFromParentWall}" data-min="0" style="width: 100px; border-radius: 3px;"></label>
@@ -1351,7 +1352,7 @@ function showCabinetMenu(x, y, cabinet) {
     let html = `
         <h3>${headerText}</h3>
         <div class="menu-content">
-            <label>Ширина, мм: <input type="text" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" data-min="100" ></label>
+            <label>Ширина, мм: <input type="text" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" data-min="18" ></label>
             <label>Глубина, мм: <input type="text" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" data-min="100" ></label>
     `;
 
@@ -1599,7 +1600,7 @@ let countertopMenu = null;
 function showCountertopMenu(x, y, countertop) {
     // Удаляем старое меню, если оно есть
     hideCountertopMenu();
-
+    
     // Создаём меню
     countertopMenu = document.createElement('div');
     countertopMenu.className = 'context-menu';
@@ -1608,6 +1609,18 @@ function showCountertopMenu(x, y, countertop) {
     countertopMenu.style.border = '1px solid #ccc';
     countertopMenu.style.padding = '10px';
     countertopMenu.style.zIndex = '1000';
+
+    // Удаляем старые элементы
+    if (widthInput) { widthInput.remove(); widthInput = null; }
+    if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
+    if (heightInput) { heightInput.remove(); heightInput = null; }
+    if (distanceLine) { cube.remove(distanceLine); distanceLine.geometry.dispose(); distanceLine = null; }
+    if (distanceLineDepth) { cube.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth = null; }
+    if (toLeftInput) { toLeftInput.remove(); toLeftInput = null; }
+    if (toRightInput) { toRightInput.remove(); toRightInput = null; }
+    if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
+    if (toBackInput) { toBackInput.remove(); toBackInput = null; }
+
 
     // Поле глубины
     const depthLabel = document.createElement('label');
@@ -2996,9 +3009,10 @@ function findNearestCabinets(cabinet, cabinets, axis, maxSize) {
                 otherMax = new THREE.Vector3(otherPos.x + otherDepth / 2, otherPos.y + otherHeight / 2, otherPos.z + otherWidth / 2);
             }
 
+            const epsilon = 0.0001; // Допуск на округление
             if (
-                testMax.x > otherMin.x && testMin.x < otherMax.x &&
-                testMax.y > otherMin.y && testMin.y < otherMax.y &&
+                testMax.x > otherMin.x + epsilon && testMin.x < otherMax.x - epsilon &&
+                testMax.y > otherMin.y + epsilon && testMin.y < otherMax.y - epsilon &&
                 testMax.z > otherMin.z && testMin.z < otherMax.z
             ) {
                 leftBoundary = axis === 'x' ? otherMax.x : otherMax.z;
@@ -3036,10 +3050,10 @@ function findNearestCabinets(cabinet, cabinets, axis, maxSize) {
                 otherMin = new THREE.Vector3(otherPos.x - otherDepth / 2, otherPos.y - otherHeight / 2, otherPos.z - otherWidth / 2);
                 otherMax = new THREE.Vector3(otherPos.x + otherDepth / 2, otherPos.y + otherHeight / 2, otherPos.z + otherWidth / 2);
             }
-
+            const epsilon = 0.0001; // Допуск на округление
             if (
                 testMax.x > otherMin.x && testMin.x < otherMax.x &&
-                testMax.y > otherMin.y && testMin.y < otherMax.y &&
+                testMax.y > otherMin.y + 0.0001 && testMin.y < otherMax.y - 0.0001 &&
                 testMax.z > otherMin.z && testMin.z < otherMax.z
             ) {
                 rightBoundary = axis === 'x' ? otherMin.x : otherMin.z;
@@ -3082,13 +3096,14 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
     widthInput.type = 'text';
     widthInput.className = 'dimension-input';
     widthInput.value = Math.round(cabinet.width * 1000);
+    widthInput.dataset.min = "18";  // Минимальное значение
     renderer.domElement.parentNode.appendChild(widthInput);
     attachExpressionValidator(widthInput);
 
     widthInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             const newWidthMm = parseFloat(widthInput.value);
-            if (!isNaN(newWidthMm) && newWidthMm >= 100) {
+            if (!isNaN(newWidthMm) && newWidthMm >= 18) {
                 cabinet.width = newWidthMm / 1000;
                 cabinet.mesh.geometry.dispose();
                 cabinet.mesh.geometry = new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth);
@@ -3107,13 +3122,14 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
     depthInput.type = 'text';
     depthInput.className = 'dimension-input';
     depthInput.value = Math.round(cabinet.depth * 1000);
+    depthInput.dataset.min = "18";   // Минимальная глубина 18 мм
     renderer.domElement.parentNode.appendChild(depthInput);
     attachExpressionValidator(depthInput);
 
     depthInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             const newDepthMm = parseFloat(depthInput.value);
-            if (!isNaN(newDepthMm) && newDepthMm >= 100) {
+            if (!isNaN(newDepthMm) && newDepthMm >= 18) {
                 cabinet.depth = newDepthMm / 1000;
                 // Для нижних шкафов обновляем offsetFromParentWall, для верхних — нет
                 if (cabinet.type === 'lowerCabinet') {
@@ -3775,7 +3791,6 @@ function findNearestObstacles(countertop, cabinets, countertops) {
     const step = 0.001;
 
     const originalPosition = countertop.position.clone();
-    const rotationY = countertop.rotation.y;
     const axis = (wallId === 'Back' || wallId === 'Front') ? 'x' : 'z';
     const maxSize = (axis === 'x') ? roomWidth : roomDepth;
 
@@ -3791,7 +3806,7 @@ function findNearestObstacles(countertop, cabinets, countertops) {
             originalPosition.y + thickness / 2,
             originalPosition.z + depth / 2
         );
-    } else if (wallId === 'Left' || wallId === 'Right') {
+    } else {
         countertopMin = new THREE.Vector3(
             originalPosition.x - depth / 2,
             originalPosition.y - thickness / 2,
@@ -3805,11 +3820,8 @@ function findNearestObstacles(countertop, cabinets, countertops) {
     }
 
     const allCabinets = (cabinets || []).filter(c => c && c.mesh && c.mesh.position);
-    const otherCountertops = (countertops || []).filter(c => {
-        const isValid = c && c !== countertop && c.position && c.userData?.type === 'countertop';
-        return isValid;
-    });
-    const obstacles = [...allCabinets, ...otherCountertops];
+    const allCountertops = (countertops || []).filter(ct => ct !== countertop);
+    const obstacles = [...allCabinets.map(c => c.mesh), ...allCountertops];
 
     let leftBoundary = -maxSize / 2;
     let rightBoundary = maxSize / 2;
@@ -3824,42 +3836,64 @@ function findNearestObstacles(countertop, cabinets, countertops) {
         testMax[axis] += step;
 
         for (const obstacle of obstacles) {
-            if (!obstacle || (!obstacle.position && !obstacle.mesh?.position)) continue;
+            if (!obstacle || !obstacle.position) continue;
 
             obstacle.updateMatrixWorld?.();
-            const obsPos = obstacle.position ? obstacle.position.clone() : obstacle.mesh.position.clone();
+            const obsPos = obstacle.position.clone();
             const obsRotationY = obstacle.rotation?.y || 0;
-            let obsWidth, obsDepth, obsHeight, obsMin, obsMax;
 
-            if (obstacle.userData?.type === 'countertop') {
-                obsWidth = obstacle.userData.length;
-                obsDepth = obstacle.userData.depth;
-                obsHeight = obstacle.userData.thickness;
+            let obsWidth, obsDepth, obsHeight;
+
+            if (obstacle.userData.type === 'countertop') {
+                const obsWallId = obstacle.userData.wallId;
+                if (obsWallId === 'Back' || obsWallId === 'Front') {
+                    obsWidth = obstacle.userData.length;
+                    obsDepth = obstacle.userData.depth;
+                } else if (obsWallId === 'Left' || obsWallId === 'Right') {
+                    obsWidth = obstacle.userData.depth;
+                    obsDepth = obstacle.userData.length;
+                }
+                obsHeight = obstacle.userData.thickness || thickness;
             } else {
-                obsWidth = obstacle.width;
-                obsDepth = obstacle.depth;
-                obsHeight = obstacle.height;
+                const cabinetData = cabinets.find(c => c.mesh === obstacle)?.userData || {};
+                if (obsRotationY === 0) {
+                    obsWidth = cabinetData.width || (obstacle.geometry?.parameters?.width) || 0.6;
+                    obsDepth = cabinetData.depth || (obstacle.geometry?.parameters?.depth) || 0.6;
+                } else {
+                    obsWidth = cabinetData.depth || (obstacle.geometry?.parameters?.depth) || 0.6;
+                    obsDepth = cabinetData.width || (obstacle.geometry?.parameters?.width) || 0.6;
+                }
+                obsHeight = cabinetData.height || (obstacle.geometry?.parameters?.height) || 0.9;
             }
 
-            if (obsRotationY === 0) {
-                obsMin = new THREE.Vector3(obsPos.x - obsWidth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsDepth / 2);
-                obsMax = new THREE.Vector3(obsPos.x + obsWidth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsDepth / 2);
-            } else if (obsRotationY === THREE.MathUtils.degToRad(90) || obsRotationY === THREE.MathUtils.degToRad(-90)) {
-                obsMin = new THREE.Vector3(obsPos.x - obsDepth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsWidth / 2);
-                obsMax = new THREE.Vector3(obsPos.x + obsDepth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsWidth / 2);
-            }
+            const obsMin = new THREE.Vector3(
+                obsPos.x - obsWidth / 2,
+                obsPos.y - obsHeight / 2,
+                obsPos.z - obsDepth / 2
+            );
+            const obsMax = new THREE.Vector3(
+                obsPos.x + obsWidth / 2,
+                obsPos.y + obsHeight / 2,
+                obsPos.z + obsDepth / 2
+            );
 
-            if (Math.abs(obsPos.x - originalPosition.x) < length / 2 && 
-                Math.abs(obsPos.z - originalPosition.z) < depth / 2 && 
-                obsMax.y < countertopMin.y) continue;
+            // Проверка пересечения по Y
+            const intersectsY = testMax.y > obsMin.y && testMin.y < obsMax.y;
+            if (!intersectsY) continue;
+
+            // Изменённое условие пересечения: исключаем соприкосновение по границе
+            const epsilon = 0.0001; // Допуск на округление
+            const intersectsX = testMax.x > obsMin.x + epsilon && testMin.x < obsMax.x - epsilon;
+            const intersectsZ = testMax.z > obsMin.z + epsilon && testMin.z < obsMax.z - epsilon;
+            const touchesXBoundary = testMax.x === obsMin.x || testMin.x === obsMax.x;
+            const touchesZBoundary = testMax.z === obsMin.z || testMin.z === obsMax.z;
 
             if (
-                testMax.x > obsMin.x && testMin.x < obsMax.x &&
-                testMax.z > obsMin.z && testMin.z < obsMax.z &&
-                testMin.y < obsMax.y
+                intersectsX && intersectsZ &&
+                !(touchesXBoundary && !intersectsZ) && // Только касание по X
+                !(touchesZBoundary && !intersectsX)    // Только касание по Z
             ) {
                 rightBoundary = axis === 'x' ? obsMin.x : obsMin.z;
-                console.log('Right obstacle:', obstacle.userData?.type || obstacle.type, obsPos);
                 break;
             }
         }
@@ -3876,51 +3910,74 @@ function findNearestObstacles(countertop, cabinets, countertops) {
         testMax[axis] -= step;
 
         for (const obstacle of obstacles) {
-            if (!obstacle || (!obstacle.position && !obstacle.mesh?.position)) continue;
+            if (!obstacle || !obstacle.position) continue;
 
             obstacle.updateMatrixWorld?.();
-            const obsPos = obstacle.position ? obstacle.position.clone() : obstacle.mesh.position.clone();
+            const obsPos = obstacle.position.clone();
             const obsRotationY = obstacle.rotation?.y || 0;
-            let obsWidth, obsDepth, obsHeight, obsMin, obsMax;
 
-            if (obstacle.userData?.type === 'countertop') {
-                obsWidth = obstacle.userData.length;
-                obsDepth = obstacle.userData.depth;
-                obsHeight = obstacle.userData.thickness;
+            let obsWidth, obsDepth, obsHeight;
+
+            if (obstacle.userData.type === 'countertop') {
+                const obsWallId = obstacle.userData.wallId;
+                if (obsWallId === 'Back' || obsWallId === 'Front') {
+                    obsWidth = obstacle.userData.length;
+                    obsDepth = obstacle.userData.depth;
+                } else if (obsWallId === 'Left' || obsWallId === 'Right') {
+                    obsWidth = obstacle.userData.depth;
+                    obsDepth = obstacle.userData.length;
+                }
+                obsHeight = obstacle.userData.thickness || thickness;
             } else {
-                obsWidth = obstacle.width;
-                obsDepth = obstacle.depth;
-                obsHeight = obstacle.height;
+                const cabinetData = cabinets.find(c => c.mesh === obstacle)?.userData || {};
+                if (obsRotationY === 0) {
+                    obsWidth = cabinetData.width || (obstacle.geometry?.parameters?.width) || 0.6;
+                    obsDepth = cabinetData.depth || (obstacle.geometry?.parameters?.depth) || 0.6;
+                } else {
+                    obsWidth = cabinetData.depth || (obstacle.geometry?.parameters?.depth) || 0.6;
+                    obsDepth = cabinetData.width || (obstacle.geometry?.parameters?.width) || 0.6;
+                }
+                obsHeight = cabinetData.height || (obstacle.geometry?.parameters?.height) || 0.9;
             }
 
-            if (obsRotationY === 0) {
-                obsMin = new THREE.Vector3(obsPos.x - obsWidth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsDepth / 2);
-                obsMax = new THREE.Vector3(obsPos.x + obsWidth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsDepth / 2);
-            } else if (obsRotationY === THREE.MathUtils.degToRad(90) || obsRotationY === THREE.MathUtils.degToRad(-90)) {
-                obsMin = new THREE.Vector3(obsPos.x - obsDepth / 2, obsPos.y - obsHeight / 2, obsPos.z - obsWidth / 2);
-                obsMax = new THREE.Vector3(obsPos.x + obsDepth / 2, obsPos.y + obsHeight / 2, obsPos.z + obsWidth / 2);
-            }
+            const obsMin = new THREE.Vector3(
+                obsPos.x - obsWidth / 2,
+                obsPos.y - obsHeight / 2,
+                obsPos.z - obsDepth / 2
+            );
+            const obsMax = new THREE.Vector3(
+                obsPos.x + obsWidth / 2,
+                obsPos.y + obsHeight / 2,
+                obsPos.z + obsDepth / 2
+            );
 
-            if (Math.abs(obsPos.x - originalPosition.x) < length / 2 && 
-                Math.abs(obsPos.z - originalPosition.z) < depth / 2 && 
-                obsMax.y < countertopMin.y) continue;
+            // Проверка пересечения по Y
+            const intersectsY = testMax.y > obsMin.y && testMin.y < obsMax.y;
+            if (!intersectsY) continue;
+
+            // Изменённое условие пересечения: исключаем соприкосновение по границе
+            const epsilon = 0.0001; // Допуск на округление
+            const intersectsX = testMax.x > obsMin.x + epsilon && testMin.x < obsMax.x - epsilon;
+            const intersectsZ = testMax.z > obsMin.z + epsilon && testMin.z < obsMax.z - epsilon;
+            
+            const touchesXBoundary = testMax.x === obsMin.x || testMin.x === obsMax.x;
+            const touchesZBoundary = testMax.z === obsMin.z || testMin.z === obsMax.z;
 
             if (
-                testMax.x > obsMin.x && testMin.x < obsMax.x &&
-                testMax.z > obsMin.z && testMin.z < obsMax.z &&
-                testMin.y < obsMax.y
+                intersectsX && intersectsZ &&
+                !(touchesXBoundary && !intersectsZ) && // Только касание по X
+                !(touchesZBoundary && !intersectsX)    // Только касание по Z
             ) {
                 leftBoundary = axis === 'x' ? obsMax.x : obsMax.z;
-                console.log('Left obstacle:', obstacle.userData?.type || obstacle.type, obsPos);
                 break;
             }
         }
         if (leftBoundary !== -maxSize / 2) break;
     }
 
-    console.log('Boundaries:', { leftBoundary, rightBoundary });
     return { leftBoundary, rightBoundary };
 }
+
 
 let countertopWidthInput, /*toLeftInput, toRightInput,*/ countertopDepthInput;
 let leftBoundaryGlobal, rightBoundaryGlobal;
@@ -3964,6 +4021,7 @@ function showCountertopDimensionsInput(countertop, countertops, cabinets) {
     countertopDepthInput.type = 'text';
     countertopDepthInput.value = (depth * 1000).toFixed(0);
     countertopDepthInput.className = 'dimension-input';
+    countertopDepthInput.dataset.min = 100;
     renderer.domElement.parentNode.appendChild(countertopDepthInput);
     attachExpressionValidator(countertopDepthInput);
 
@@ -3971,6 +4029,17 @@ function showCountertopDimensionsInput(countertop, countertops, cabinets) {
         if (event.key === 'Enter') {
             const newDepthMm = parseFloat(countertopDepthInput.value);
             if (!isNaN(newDepthMm) && newDepthMm >= 100) {
+                const depthChange = (newDepthMm / 1000 - countertop.userData.depth) / 2;
+
+                if (wallId === 'Back') {
+                    countertop.position.z += depthChange; // Сдвигаем к стене
+                } else if (wallId === 'Front') {
+                    countertop.position.z -= depthChange;
+                } else if (wallId === 'Left') {
+                    countertop.position.x += depthChange;
+                } else if (wallId === 'Right') {
+                    countertop.position.x -= depthChange;
+                }
                 countertop.userData.depth = newDepthMm / 1000;
                 countertop.geometry.dispose();
                 countertop.geometry = new THREE.BoxGeometry(length, thickness, countertop.userData.depth);
@@ -3994,6 +4063,7 @@ function showCountertopDimensionsInput(countertop, countertops, cabinets) {
     toLeftInput.type = 'text';
     toLeftInput.value = Math.round(leftDistance);
     toLeftInput.className = 'dimension-input';
+    toLeftInput.dataset.min = 0;
     renderer.domElement.parentNode.appendChild(toLeftInput);
     attachExpressionValidator(toLeftInput);
 
@@ -4065,6 +4135,7 @@ function showCountertopDimensionsInput(countertop, countertops, cabinets) {
     toRightInput.type = 'text';
     toRightInput.value = Math.round(rightDistance);
     toRightInput.className = 'dimension-input';
+    
     renderer.domElement.parentNode.appendChild(toRightInput);
     attachExpressionValidator(toRightInput);
 
@@ -4259,7 +4330,7 @@ function updateCountertopDimensionsInputPosition(countertop) {
 // Обработчик кликов для выделения объектов и стен
 // Обработчик кликов для выделения объектов и стен
 renderer.domElement.addEventListener('click', (event) => {
-    console.log('Click handler triggered:', event.clientX, event.clientY);
+    //console.log('Click handler triggered:', event.clientX, event.clientY);
     if (!cube || justDragged) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
@@ -4503,15 +4574,15 @@ renderer.domElement.addEventListener('click', (event) => {
         });
     }
 
-    console.log('Before updateHint');
+    //console.log('Before updateHint');
     updateHint(selectedCabinets.length > 0 ? 'Выделено шкафов: ' + selectedCabinets.length : 'Выделите шкафы');
-    console.log('Before updateCountertopButtonVisibility');
+    //console.log('Before updateCountertopButtonVisibility');
     updateCountertopButtonVisibility();
-    console.log('Before updateEdgeColors');
+    //console.log('Before updateEdgeColors');
     updateEdgeColors();
-    console.log('Before updateSelectedFaceDisplay');
+    //console.log('Before updateSelectedFaceDisplay');
     updateSelectedFaceDisplay();
-    console.log('After all updates');
+    //console.log('After all updates');
 });
 
 // Новый обработчик для начала перетаскивания
@@ -5847,4 +5918,37 @@ function updateTextureScale(countertop) {
             countertop.material.needsUpdate = true;
         }
     }
+}
+
+function logCountertopInfo(countertop) {
+    if (!countertop || !countertop.userData) {
+        console.log("Нет выбранной столешницы.");
+        return;
+    }
+
+    const { length, depth, thickness, wallId } = countertop.userData;
+    const position = countertop.position.clone();
+    const roomWidth = currentLength;
+    const roomDepth = currentHeight;
+
+    let minX = position.x - (wallId === 'Back' || wallId === 'Front' ? length / 2 : depth / 2);
+    let maxX = position.x + (wallId === 'Back' || wallId === 'Front' ? length / 2 : depth / 2);
+    let minZ = position.z - (wallId === 'Back' || wallId === 'Front' ? depth / 2 : length / 2);
+    let maxZ = position.z + (wallId === 'Back' || wallId === 'Front' ? depth / 2 : length / 2);
+
+    let leftOffset = minX + roomWidth / 2;
+    let rightOffset = roomWidth / 2 - maxX;
+    let frontOffset = minZ + roomDepth / 2;
+    let backOffset = roomDepth / 2 - maxZ;
+
+    console.log("------ Данные о столешнице ------");
+    console.log(`Сторона стены: ${wallId}`);
+    console.log(`Размеры (Длина x Глубина x Толщина): ${length} x ${depth} x ${thickness}`);
+    console.log(`Позиция (X, Z): (${position.x}, ${position.z})`);
+    console.log(`Границы (minX: ${minX}, maxX: ${maxX}, minZ: ${minZ}, maxZ: ${maxZ})`);
+    console.log("Отступы от углов:");
+    console.log(`Левый угол: ${leftOffset} мм`);
+    console.log(`Правый угол: ${rightOffset} мм`);
+    console.log(`Передний угол: ${frontOffset} мм`);
+    console.log(`Задний угол: ${backOffset} мм`);
 }
