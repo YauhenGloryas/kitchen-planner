@@ -1,19 +1,61 @@
+import * as THREE from 'three'; // Импорт ядра Three.js
+import {
+    showCabinetConfigMenu,
+    createCabinetConfigMenu,
+    updateSpecificConfigFields,
+    //hideCabinetConfigMenu
+  } from './menus.js';
+
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, window.innerWidth * 0.7 / window.innerHeight, 0.1, 1000);
 camera.position.z = 10;
 
+
+
 const renderer = new THREE.WebGLRenderer();
+
+
 renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
 document.getElementById('canvasContainer').appendChild(renderer.domElement);
 
-const ambientLight = new THREE.AmbientLight(0x404040);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-directionalLight.position.set(0, 0, 5);
+const directionalLight = new THREE.DirectionalLight( 0xffffff, 1.5 ); // Цвет, Интенсивность (попробуй 1.0 - 2.0)
+directionalLight.position.set( 5, 10, 7.5 ); // Позиция (X, Y, Z) - откуда светит
 scene.add(directionalLight);
+
+// Настройки теней (опционально, но рекомендуется для реализма)
+directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 1024; // Разрешение карты теней
+directionalLight.shadow.mapSize.height = 1024;
+directionalLight.shadow.camera.near = 0.5;
+directionalLight.shadow.camera.far = 50;
+// Настроить область камеры теней по размеру сцены
+let shadowCamSize = 10; // Примерный размер области тени
+directionalLight.shadow.camera.left = -shadowCamSize;
+directionalLight.shadow.camera.right = shadowCamSize;
+directionalLight.shadow.camera.top = shadowCamSize;
+directionalLight.shadow.camera.bottom = -shadowCamSize;
+
+scene.add( directionalLight );
+
+// Также убедись, что у рендерера включены карты теней
+renderer.shadowMap.enabled = true; // Добавь это при настройке renderer
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Тип теней (опционально)
+
+// И у объектов, которые должны отбрасывать/принимать тени, включены свойства:
+//mesh.castShadow = true;
+//mesh.receiveShadow = true;
+//planeMesh.receiveShadow = true; // Например, пол
+
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+
+// Вызови эту функцию один раз при инициализации приложения
+//setupPostprocessing();
+
+//onWindowResize();
 
 let cube, edges;
 let selectedFaceIndex = -1;
@@ -214,7 +256,7 @@ function undoLastAction() {
     windows = lastAction.windows.map(obj => {
         const mesh = new THREE.Mesh(
             new THREE.BoxGeometry(obj.width, obj.height, obj.depth),
-            new THREE.MeshBasicMaterial({ color: obj.initialColor })
+            new THREE.MeshStandardMaterial({ color: obj.initialColor })
         );
         const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry);
         const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
@@ -230,7 +272,7 @@ function undoLastAction() {
     cabinets = lastAction.cabinets.map(cabinet => {
         const mesh = new THREE.Mesh(
             new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth),
-            new THREE.MeshBasicMaterial({ color: cabinet.initialColor })
+            new THREE.MeshStandardMaterial({ color: cabinet.initialColor })
         );
         const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry);
         const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
@@ -344,7 +386,7 @@ const objectTypes = {
         defaultWidth: 600 / 1000,
         defaultDepth: 520 / 1000,
         defaultoffsetAlongWall: 0,
-        initialColor: 0xd2b48c,
+        initialColor: 0xCCCC66,
         overhang: 18 / 1000,
         facadeThickness: 18 / 1000
         // Убираем defaultHeight, defaultOffsetBottom, defaultoffsetFromParentWall — будем вычислять в addObject
@@ -353,7 +395,7 @@ const objectTypes = {
         defaultWidth: 600 / 1000,
         defaultDepth: 350 / 1000,
         defaultoffsetAlongWall: 0,
-        initialColor: 0xd2b48c,
+        initialColor: 0xFFFFFF,
         facadeThickness: 18 / 1000,
         facadeGap: 3 / 1000,
         isMezzanine: 'normal'
@@ -364,7 +406,7 @@ const objectTypes = {
         defaultDepth: 520 / 1000,
         defaultOffsetX: 0,
         defaultOffsetZ: 0,
-        initialColor: 0xd2b48c,
+        initialColor: 0xCCCC66,
         overhang: 18 / 1000,
         facadeThickness: 18 / 1000
         // Убираем defaultHeight, defaultOffsetBottom
@@ -430,7 +472,7 @@ function addObject(type) {
 
         elements.forEach((el, index) => {
             const geometry = new THREE.BoxGeometry(el.width, el.height, el.depth);
-            const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+            const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
             const mesh = new THREE.Mesh(geometry, material);
 
             const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -500,7 +542,7 @@ function addObject(type) {
     } else {
         // Логика для остальных объектов (window, socket, radiator, column) остаётся без изменений
         const geometry = new THREE.BoxGeometry(params.defaultWidth, params.defaultHeight, params.defaultDepth);
-        const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+        const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
         mesh = new THREE.Mesh(geometry, material);
 
         const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -1110,7 +1152,7 @@ function attachExpressionValidator(input) {
             try {
                 let result = eval(newValue); // Вычисляем результат
                 if (isNaN(result) || result < parseFloat(input.dataset.min)) {
-                    console.log(input.dataset.min);
+                    //console.log(input.dataset.min);
                     alert(`Значение должно быть числом не меньше ${input.dataset.min}!`);
                     input.value = lastValidValue;
                 } else {
@@ -1468,7 +1510,7 @@ function showCabinetMenu(x, y, cabinet) {
             </select>
             <label>Конфигурация шкафа:</label>
             <select id="cabinetConfig"></select>
-            <button id="configureCabinetBtn" onclick="showCabinetConfigMenu(${cabinets.indexOf(cabinet)}, ${x}, ${y})">Настроить шкаф</button>
+            <button id="configureCabinetBtn">Настроить шкаф</button>
         `;
     } else if (cabinet.type === 'upperCabinet') {
         // Вычисляем смещение для верхних шкафов
@@ -1495,7 +1537,7 @@ function showCabinetMenu(x, y, cabinet) {
             </select>
             <label>Конфигурация шкафа:</label>
             <select id="cabinetConfig"></select>
-            <button id="configureCabinetBtn" onclick="showCabinetConfigMenu(${cabinets.indexOf(cabinet)}, ${x}, ${y})">Настроить шкаф</button>
+            <button id="configureCabinetBtn">Настроить шкаф</button>
         `;
     } else {
         // Нижние шкафы у стены
@@ -1515,13 +1557,13 @@ function showCabinetMenu(x, y, cabinet) {
             </select>
             <label>Конфигурация шкафа:</label>
             <select id="cabinetConfig"></select>
-            <button id="configureCabinetBtn" onclick="showCabinetConfigMenu(${cabinets.indexOf(cabinet)}, ${x}, ${y})">Настроить шкаф</button>
+            <button id="configureCabinetBtn">Настроить шкаф</button>
         `;
     }
 
     // --- Блок 4: Кнопки управления ---
     html += `
-            <button onclick="applyCabinetChanges(${cabinets.indexOf(cabinet)})">Применить</button>
+            <button id="applyCabinetChanges" onclick="applyCabinetChanges(${cabinets.indexOf(cabinet)})">Применить</button>
             <button onclick="deleteCabinet(${cabinets.indexOf(cabinet)})">Удалить</button>
         </div>
     `;
@@ -1530,6 +1572,10 @@ function showCabinetMenu(x, y, cabinet) {
     menu.style.left = `${x + 30}px`;
     menu.style.top = `${y - 10}px`;
     menu.style.display = 'block';
+    document.getElementById('configureCabinetBtn')?.addEventListener('click', () => {
+        console.log("pressed conf but");
+        showCabinetConfigMenu(cabinets.indexOf(cabinet), x, y, cabinets, kitchenGlobalParams);
+    });
 
     // --- Блок 5: Применяем attachExpressionValidator к нужным полям ---
     const inputsToValidate = [];
@@ -2001,16 +2047,34 @@ let dragStartOffsetX = 0; // Для X-позиции
 let dragStartOffsetZ = 0; // Для Z-позиции
 let justDragged = false;
 
-function startDraggingCabinet(cabinet, event) {
+let isCloningMode = false;
+
+/**
+ * Начинает процесс перетаскивания шкафа.
+ * @param {object} cabinet - Объект данных шкафа.
+ * @param {MouseEvent} event - Событие mousedown.
+ * @param {boolean} wasSelected - Был ли шкаф выделен до начала перетаскивания.
+ */
+function startDraggingCabinet(cabinet, event, wasSelected) { // Добавлен параметр wasSelected
+    //console.log(`Dragging started for cabinet ${cabinet.mesh.uuid}. Was selected: ${wasSelected}`);
     draggedCabinet = cabinet;
+    // ---> Сохраняем флаг в userData перетаскиваемого шкафа <---
+    draggedCabinet.mesh.userData.wasSelectedBeforeDrag = wasSelected;
+    isCloningMode = event.shiftKey; // флаг для копирования
+
+    // Сохраняем начальные позиции/офсеты
     dragStartX = event.clientX;
     dragStartY = event.clientY;
-    dragStartoffsetAlongWall = cabinet.offsetAlongWall || 0; // Для обычных шкафов
-    dragStartOffsetX = cabinet.offsetX || 0;       // Для свободно-стоящих по X
-    dragStartOffsetZ = cabinet.offsetZ || 0;       // Для свободно-стоящих по Z
+    dragStartoffsetAlongWall = cabinet.offsetAlongWall ?? 0;
+    dragStartOffsetX = cabinet.offsetX ?? 0;
+    dragStartOffsetZ = cabinet.offsetZ ?? 0;
 
+    // Добавляем слушатели для движения и отпускания мыши
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
+
+    // Можно добавить стиль курсора 'grabbing'
+    document.body.style.cursor = 'grabbing';
 }
 
 let isDraggingForSave = false; // Глобальный флаг для отслеживания начала перетаскивания
@@ -2018,47 +2082,31 @@ let isDraggingForSave = false; // Глобальный флаг для отсл�
 function onMouseMove(event) {
     if (!draggedCabinet) return;
 
-    // Сохраняем состояние и настраиваем выделение только при первом движении
+    // --- Initial setup on first move ---
     if (!isDraggingForSave) {
         const cabinetIndex = cabinets.indexOf(draggedCabinet);
-        saveState("moveCabinet", { cabinetIndex });
+        saveState("moveCabinet", { /* ... */ }); // Save initial state
         isDraggingForSave = true;
-
-        // Снимаем выделение со всех шкафов и выделяем текущий
-        cabinets.forEach(c => {
-            if (c !== draggedCabinet) {
-                c.mesh.material.color.set(c.initialColor);
-                c.edges.material.color.set(0x000000);
-                c.mesh.material.needsUpdate = true;
-                c.edges.material.needsUpdate = true;
-            }
-        });
-        selectedCabinet = draggedCabinet; // Устанавливаем перетаскиваемый шкаф как выделенный
-        draggedCabinet.mesh.material.color.set(0x00ffff); // Цвет выделения
-        draggedCabinet.edges.material.color.set(0x009933);
-        draggedCabinet.mesh.material.needsUpdate = true;
-        draggedCabinet.edges.material.needsUpdate = true;
-
-        // Показываем размеры в зависимости от типа шкафа
-        if (draggedCabinet.type === 'freestandingCabinet') {
-            showFreestandingCabinetDimensions(draggedCabinet, cabinets);
-        } else if (draggedCabinet.wallId) {
-            const config = getWallConfig(draggedCabinet.wallId, draggedCabinet, cabinets);
-            draggedCabinet.boundaries = findNearestCabinets(draggedCabinet, cabinets, config.axis, config.maxSize);
-            showCabinetDimensionsInput(draggedCabinet, cabinets);
-        }
+        // Apply highlight only to dragged item
+        const allHighlightableData = [...cabinets, ...windows, ...countertops];
+        allHighlightableData.forEach(itemData => removeHighlight(itemData.mesh || itemData));
+        selectedCabinets = [];
+        applyHighlight(draggedCabinet.mesh);
+        // Hide dimension inputs during drag
+        // ... (hide inputs) ...
     }
 
+    // --- Raycasting ---
     const rect = renderer.domElement.getBoundingClientRect();
     const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
     raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
     const intersects = raycaster.intersectObject(cube, false);
 
     if (intersects.length > 0) {
         const intersectPoint = intersects[0].point.clone().applyMatrix4(cube.matrixWorld.clone().invert());
 
+        // --- Freestanding Cabinet Movement (EXACTLY FROM OLD USER CODE) ---
         if (draggedCabinet.type === 'freestandingCabinet') {
             const targetX = intersectPoint.x;
             const targetZ = intersectPoint.z;
@@ -2160,92 +2208,240 @@ function onMouseMove(event) {
                 }
             }
         }
-
-        draggedCabinet.mesh.material.color.set(0x00ffff);
-        draggedCabinet.edges.material.color.set(0x009933);
-        draggedCabinet.mesh.material.needsUpdate = true;
-        draggedCabinet.edges.material.needsUpdate = true;
-
-        // Обновляем размеры, используя сохранённые boundaries
-        if (draggedCabinet.type === 'freestandingCabinet') {
-            updateDimensionsInputPosition(draggedCabinet, cabinets);
-        } else {
-            updateDimensionsInputPosition(draggedCabinet, cabinets);
-        }
+    } else {
+        // No intersection with cube surface. Maybe stop drag? Or keep last position?
+         //console.log("No intersection with cube surface.");
     }
-}
+} // End onMouseMove
 
 function onMouseUp(event) {
     if (!draggedCabinet) return;
 
     const cabinet = draggedCabinet;
+    const wasSelected = cabinet.mesh.userData.wasSelectedBeforeDrag;
+
+    // --- Просто завершаем перемещение (клонирование уже было) ---
+    const hasIntersection = checkCabinetIntersections(cabinet);
+    cabinet.mesh.material.color.set(hasIntersection ? 0xff0000 : cabinet.initialColor);
+    cabinet.mesh.material.needsUpdate = true;
+
+    // Если он был выделен ДО начала, восстановим выбор
+    if (wasSelected) {
+        selectedCabinets = [cabinet];
+        selectedCabinet = cabinet;
+
+        if (['lowerCabinet', 'upperCabinet'].includes(cabinet.type)) {
+            showCabinetDimensionsInput(cabinet, cabinets);
+        } else if (cabinet.type === 'freestandingCabinet') {
+            showFreestandingCabinetDimensions(cabinet, cabinets);
+        }
+    } else {
+        // Убираем выделение и эмиссию
+        removeHighlight(cabinet.mesh);
+        selectedCabinets = [];
+        selectedCabinet = null;
+    }
+
+    // --- Сброс ---
     draggedCabinet = null;
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
-
-    const hasIntersection = checkCabinetIntersections(cabinet);
-    cabinet.mesh.material.color.set(hasIntersection ? 0xff0000 : cabinet.initialColor);
-    cabinet.edges.material.color.set(0x000000);
-    cabinet.mesh.material.needsUpdate = true;
-    cabinet.edges.material.needsUpdate = true;
-
+    document.body.style.cursor = 'default';
+    isCloningMode = false;
     justDragged = true;
     isDraggingForSave = false;
     setTimeout(() => justDragged = false, 0);
-
-    // Сбрасываем выделение после перетаскивания
-    selectedCabinet = null;
-    if (widthInput) { widthInput.remove(); widthInput = null; }
-    if (depthInput) { depthInput.remove(); depthInput = null; }
-    if (heightInput) { heightInput.remove(); heightInput = null; }
-    if (distanceLine) { cube.remove(distanceLine); distanceLine.geometry.dispose(); distanceLine = null; }
-    if (distanceLineDepth) { cube.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth = null; }
-    if (toLeftInput) { toLeftInput.remove(); toLeftInput = null; }
-    if (toRightInput) { toRightInput.remove(); toRightInput = null; }
-    if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
-    if (toBackInput) { toBackInput.remove(); toBackInput = null; }
 }
 
-// Обработчик правой кнопки для открытия меню выделенного объекта
-renderer.domElement.addEventListener('contextmenu', (event) => {
-    event.preventDefault();
 
-    if (!cube) return;
 
-    // Ищем уже выделенный объект (голубой)
-    const selectedCabinet = cabinets.find(c => c.mesh.material.color.getHex() === 0x00ffff);
-    const selectedWindow = windows.find(w => w.mesh.material.color.getHex() === 0x00ffff);
-    const selectedCountertop = countertops.find(c => c.material.color.getHex() === 0x00ffff);
 
-    // Открываем меню только для уже выделенного объекта
-    if (selectedCabinet) {
-        hideWindowMenu();
-        hideSocketMenu();
-        hideCabinetMenu();
-        //hideCountertopMenu(); // Добавляем скрытие меню столешницы
-        showCabinetMenu(event.clientX, event.clientY, selectedCabinet);
-    } else if (selectedWindow) {
-        hideWindowMenu();
-        hideSocketMenu();
-        hideCabinetMenu();
-        hideCountertopMenu(); // Добавляем скрытие меню столешницы
-        const groupId = selectedWindow.groupId;
-        // Используем selectedWindow как запасной вариант, если группа не найдена
-        const firstGroupElement = groupId ? windows.find(w => w.groupId === groupId && w.doorIndex === 0) || selectedWindow : selectedWindow;
-        if (selectedWindow.type === 'socket') {
-            showSocketMenu(event.clientX, event.clientY, selectedWindow);
-        } else {
-            showWindowMenu(event.clientX, event.clientY, firstGroupElement);
+/**
+ * Создает клон объекта данных шкафа, включая новый меш и ребра.
+ * Копирует общие и специфичные для типа свойства.
+ * @param {object} original - Оригинальный объект данных шкафа.
+ * @returns {object | null} Новый объект данных клонированного шкафа или null в случае ошибки.
+ */
+function cloneCabinet(original) {
+    // Проверка на наличие необходимых данных в оригинале
+    // Добавь сюда проверку на ВСЕ свойства, которые критичны для создания меша
+    if (!original || !original.mesh || !original.type || typeof original.width !== 'number' || typeof original.height !== 'number' || typeof original.depth !== 'number') {
+        console.error("Cannot clone cabinet: Original object is missing essential properties (mesh, type, width, height, depth).", original);
+        return null;
+    }
+
+    // 1. Создаем новую геометрию, материал, меш, ребра
+    try {
+        const geometry = new THREE.BoxGeometry(original.width, original.height, original.depth);
+        // Используем MeshStandardMaterial - он лучше работает со светом и emissive
+        const material = new THREE.MeshStandardMaterial({
+             color: original.initialColor || '#c0c0c0' // Цвет по умолчанию - серый
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+
+        const edgesGeometry = new THREE.EdgesGeometry(geometry);
+        const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+        const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+        edges.raycast = () => {}; // Ребра не участвуют в raycast
+        mesh.add(edges); // Добавляем ребра к мешу
+
+        // Копируем позицию и вращение меша из оригинала
+        mesh.position.copy(original.mesh.position);
+        mesh.rotation.copy(original.mesh.rotation);
+
+        // 2. Создаем базовый объект клона с ОБЩИМИ свойствами
+        const clone = {
+            mesh: mesh,
+            edges: edges,
+            type: original.type,
+            width: original.width,
+            height: original.height,
+            depth: original.depth, // <--- КОПИРУЕТСЯ
+            initialColor: original.initialColor,
+            // Используем ?? для установки значения по умолчанию, если в оригинале его нет
+            facadeThickness: original.facadeThickness ?? 0.018, // Пример по умолчанию 18мм <--- КОПИРУЕТСЯ (с дефолтом)
+            facadeGap: original.facadeGap ?? 0.003,
+            cabinetType: original.cabinetType ?? 'straight',
+            cabinetConfig: original.cabinetConfig ?? 'swing',
+            isHeightIndependent: original.isHeightIndependent ?? false, // Пример дефолта
+            isHeightEditable: original.isHeightEditable ?? false, // Пример дефолта
+            // Добавь сюда другие свойства, которые ТОЧНО есть у ВСЕХ типов шкафов
+        };
+
+        // 3. Добавляем СПЕЦИФИЧНЫЕ для типа свойства
+        switch (original.type) {
+            case 'lowerCabinet':
+                clone.wallId = original.wallId;
+                clone.offsetAlongWall = original.offsetAlongWall;
+                clone.offsetBottom = original.offsetBottom;
+                clone.offsetFromParentWall = original.offsetFromParentWall;
+                clone.overhang = original.overhang ?? 0.02; // Пример по умолчанию 20мм <--- КОПИРУЕТСЯ (с дефолтом)
+                // Копируем все остальные детальные конфиги, используя ?? для дефолтов
+                clone.dishwasherWidth = original.dishwasherWidth ?? '600';
+                clone.doorType = original.doorType ?? 'double';
+                clone.shelfType = original.shelfType ?? 'none';
+                clone.shelfCount = original.shelfCount ?? 0;
+                clone.facadeCount = original.facadeCount ?? '2';
+                clone.drawerSet = original.drawerSet ?? 'D+D';
+                clone.ovenHeight = original.ovenHeight ?? '600';
+                clone.ovenPosition = original.ovenPosition ?? 'top';
+                clone.extraOffset = original.extraOffset ?? 0;
+                clone.ovenType = original.ovenType ?? '600';
+                clone.ovenLevel = original.ovenLevel ?? 'drawer';
+                clone.microwaveType = original.microwaveType ?? '380';
+                clone.underOvenFill = original.underOvenFill ?? 'drawers';
+                clone.topShelves = original.topShelves ?? '2';
+                clone.fridgeType = original.fridgeType ?? 'double';
+                clone.shelvesAbove = original.shelvesAbove ?? '1';
+                clone.visibleSide = original.visibleSide ?? 'none';
+                clone.doorOpening = original.doorOpening ?? 'left';
+                clone.verticalProfile = original.verticalProfile ?? 'none';
+                clone.rearStretcher = original.rearStretcher ?? 'horizontal';
+                clone.frontStretcher = original.frontStretcher ?? 'horizontal';
+                clone.rearPanel = original.rearPanel ?? 'yes';
+                clone.falsePanels = original.falsePanels ?? 'none';
+                clone.stretcherDrop = original.stretcherDrop ?? 0;
+                clone.facadeSet = original.facadeSet ?? 'set1';
+                clone.highDividerDepth = original.highDividerDepth ?? 560;
+                break;
+
+            case 'upperCabinet':
+                clone.wallId = original.wallId;
+                clone.offsetAlongWall = original.offsetAlongWall;
+                clone.offsetBottom = original.offsetBottom;
+                clone.offsetFromParentWall = original.offsetFromParentWall;
+                clone.isMezzanine = original.isMezzanine; // Специфично для верхних
+                // У верхних в твоем списке не было overhang. Если он нужен - добавь.
+                break;
+
+            case 'freestandingCabinet':
+                clone.wallId = 'Bottom'; // У них всегда 'Bottom'
+                clone.offsetX = original.offsetX;
+                clone.offsetZ = original.offsetZ;
+                clone.offsetBottom = original.offsetBottom;
+                clone.overhang = original.overhang ?? 0.02; // <--- КОПИРУЕТСЯ (с дефолтом)
+                clone.frontMarker = original.frontMarker; // Маркер переда
+                break;
+
+            default:
+                console.warn("Cloning unknown cabinet type:", original.type);
+                // Можно скопировать оставшиеся свойства из оригинала, если это безопасно
+                Object.keys(original).forEach(key => {
+                     if (!(key in clone) && key !== 'mesh' && key !== 'edges') {
+                         clone[key] = original[key];
+                     }
+                 });
+                break;
         }
-    } else if (selectedCountertop) {
-        hideWindowMenu();
-        hideSocketMenu();
-        hideCabinetMenu();
-        hideCountertopMenu(); // Скрываем старое меню столешницы, если было
-        showCountertopMenu(event.clientX, event.clientY, selectedCountertop);
-        console.log('try to call countertop menu');
+
+        // 4. Копируем/очищаем userData меша
+        clone.mesh.userData = {}; // Начинаем с чистого объекта
+        if (original.mesh.userData) {
+             // Копируем только "постоянные" данные, если они есть в userData меша оригинала
+             // Например: clone.mesh.userData.somePersistentID = original.mesh.userData.somePersistentID;
+        }
+        // Временные флаги подсветки/перетаскивания не копируем
+
+        console.log("Cabinet cloned:", clone);
+        return clone;
+
+    } catch (error) {
+        console.error("Error during cabinet cloning:", error, "Original object:", original);
+        return null; // Возвращаем null в случае ошибки
+    }
+}
+
+
+// Обработчик правой кнопки для открытия меню (версия для Emissive / selectedCabinets)
+renderer.domElement.addEventListener('contextmenu', (event) => {
+    event.preventDefault(); // Отменяем стандартное меню браузера
+
+    // --- Проверяем: выделен ли один объект
+    if (selectedCabinets.length !== 1) {
+        // Не выделено или выделено больше одного — ничего не делаем
+        hideWindowMenu(); hideSocketMenu(); hideCabinetMenu(); hideCountertopMenu();
+        return;
+    }
+
+    const selectedItem = selectedCabinets[0]; // Единственный выделенный объект
+    let itemType = null;
+    let menuFunction = null;
+    let dataObject = selectedItem;
+
+    // Определяем тип объекта и нужное меню
+    if (selectedItem.isMesh && selectedItem.userData?.type === 'countertop') {
+        itemType = 'countertop';
+        menuFunction = showCountertopMenu;
+    } else if (['lowerCabinet', 'upperCabinet', 'freestandingCabinet'].includes(selectedItem.type)) {
+        itemType = 'cabinet';
+        menuFunction = showCabinetMenu;
+    } else if (['window', 'door', 'opening', 'socket'].includes(selectedItem.type)) {
+        if (selectedItem.type === 'socket') {
+            itemType = 'socket';
+            menuFunction = showSocketMenu;
+        } else {
+            itemType = 'window';
+            menuFunction = showWindowMenu;
+
+            // Если это группа окон/дверей, берем "ведущий" элемент
+            const groupId = selectedItem.groupId;
+            dataObject = groupId
+                ? (windows.find(w => w.groupId === groupId && w.doorIndex === 0) || selectedItem)
+                : selectedItem;
+        }
+    } else {
+        // Неизвестный тип — ничего не показываем
+        hideWindowMenu(); hideSocketMenu(); hideCabinetMenu(); hideCountertopMenu();
+        return;
+    }
+
+    // --- Показываем нужное меню
+    if (menuFunction) {
+        hideWindowMenu(); hideSocketMenu(); hideCabinetMenu(); hideCountertopMenu();
+        menuFunction(event.clientX, event.clientY, dataObject);
     }
 });
+
 
 function updateCabinetPosition(cabinet) {
     switch (cabinet.wallId) {
@@ -2329,7 +2525,7 @@ function addFreestandingCabinet(intersectPoint) {
     // --- Блок 4: Создание 3D-объекта ---
     // Создаём геометрию, материал и рёбра шкафа
     const geometry = new THREE.BoxGeometry(params.defaultWidth, params.defaultHeight, params.defaultDepth);
-    const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+    const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
     const mesh = new THREE.Mesh(geometry, material);
 
     const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -2706,7 +2902,7 @@ function addAdjacentSocket(socketIndex, direction) {
     }
 
     const geometry = new THREE.BoxGeometry(params.defaultWidth, params.defaultHeight, params.defaultDepth);
-    const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+    const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
     const mesh = new THREE.Mesh(geometry, material);
 
     const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -3155,7 +3351,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
 
     if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
 
-    if (!['lowerCabinet', 'upperCabinet'].includes(cabinet.type) || cabinet.mesh.material.color.getHex() !== 0x00ffff) {
+    if (!['lowerCabinet', 'upperCabinet'].includes(cabinet.type)) {
         return;
     }
     
@@ -3341,7 +3537,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
 
     if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
 
-    if (cabinet.type !== 'freestandingCabinet' || cabinet.mesh.material.color.getHex() !== 0x00ffff) {
+    if (cabinet.type !== 'freestandingCabinet') {
         return;
     }
 
@@ -4048,11 +4244,11 @@ function findNearestObstacles(countertop, cabinets, countertops) {
             );
 
             // Проверка пересечения по Y
-            const intersectsY = testMax.y > obsMin.y && testMin.y < obsMax.y;
+            const epsilon = 0.0001; // Допуск на округление
+            const intersectsY = testMax.y > obsMin.y + epsilon && testMin.y < obsMax.y - epsilon;
             if (!intersectsY) continue;
 
             // Изменённое условие пересечения: исключаем соприкосновение по границе
-            const epsilon = 0.0001; // Допуск на округление
             const intersectsX = testMax.x > obsMin.x + epsilon && testMin.x < obsMax.x - epsilon;
             const intersectsZ = testMax.z > obsMin.z + epsilon && testMin.z < obsMax.z - epsilon;
             
@@ -4490,48 +4686,73 @@ function updateCountertopDimensionsInputPosition(countertop) {
 
 
 
-// Обработчик кликов для выделения объектов и стен
-// Обработчик кликов для выделения объектов и стен
-renderer.domElement.addEventListener('click', (event) => {
-    //console.log('Click handler triggered:', event.clientX, event.clientY);
-    if (!cube || justDragged) return;
+// --- Константы для подсветки ---
+const HIGHLIGHT_EMISSIVE_COLOR = 0x00FFFF; // Цвет свечения
+const HIGHLIGHT_EMISSIVE_INTENSITY = 0.8;  // Интенсивность
 
+/** Применяет emissive подсветку к мешу */
+function applyHighlight(mesh) {
+    if (!mesh || !mesh.material || !mesh.material.emissive || mesh.userData?.isHighlighted) {
+         // Пропускаем, если нет меша/материала/emissive или уже подсвечен
+         return;
+    }
+    // Сохраняем исходные значения
+    mesh.userData.originalEmissive = mesh.material.emissive.getHex();
+    mesh.userData.originalIntensity = mesh.material.emissiveIntensity ?? 1.0; // Используем 1.0 как дефолт, если intensity не задан
+    // Применяем подсветку
+    mesh.material.emissive.setHex(HIGHLIGHT_EMISSIVE_COLOR);
+    mesh.material.emissiveIntensity = HIGHLIGHT_EMISSIVE_INTENSITY;
+    mesh.material.needsUpdate = true;
+    mesh.userData.isHighlighted = true; // Ставим флаг
+    // console.log(`Highlighted: ${mesh.uuid}`);
+}
+
+/** Снимает emissive подсветку с меша */
+function removeHighlight(mesh) {
+    if (!mesh || !mesh.material || !mesh.material.emissive || !mesh.userData?.isHighlighted) {
+        // Пропускаем, если нет меша/материала/emissive или не подсвечен
+        return;
+    }
+    // Восстанавливаем исходные значения
+    mesh.material.emissive.setHex(mesh.userData.originalEmissive ?? 0x000000); // Восстанавливаем или ставим черный
+    mesh.material.emissiveIntensity = mesh.userData.originalIntensity ?? 1.0; // Восстанавливаем или ставим 1.0
+    mesh.material.needsUpdate = true;
+    mesh.userData.isHighlighted = false; // Снимаем флаг
+    // Удаляем сохраненные значения
+    delete mesh.userData.originalEmissive;
+    delete mesh.userData.originalIntensity;
+    // console.log(`Unhighlighted: ${mesh.uuid}`);
+}
+
+
+// --- Обработчик кликов для выделения через Emissive ---
+renderer.domElement.addEventListener('click', (event) => {
+    if (!cube || justDragged) {
+        justDragged = false;
+        return;
+    }
+
+    // --- Расчет координат мыши и Raycaster ---
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
     raycaster.setFromCamera(mouse, camera);
 
-    const allObjects = [...cabinets.map(c => c.mesh), ...windows.map(w => w.mesh), ...countertops];
-    const objectIntersects = raycaster.intersectObjects(allObjects, true);
+    // --- Объекты для проверки пересечения ---
+    const intersectableMeshes = [
+        ...cabinets.map(c => c.mesh),
+        ...windows.map(w => w.mesh),
+        ...countertops
+    ].filter(mesh => mesh);
+    const objectIntersects = raycaster.intersectObjects(intersectableMeshes, false);
     const wallIntersects = raycaster.intersectObject(cube, false);
 
-    // Сбрасываем выделение, сохраняя материалы
-    windows.forEach(w => {
-        w.mesh.material.color.set(w.initialColor);
-        w.edges.material.color.set(0x000000);
-        w.mesh.material.needsUpdate = true;
-        w.edges.material.needsUpdate = true;
-    });
-    cabinets.forEach(c => {
-        const hasIntersection = checkCabinetIntersections(c);
-        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
-        c.edges.material.color.set(0x000000);
-        c.mesh.material.needsUpdate = true;
-        c.edges.material.needsUpdate = true;
-    });
-    countertops.forEach(c => {
-        if (!c.userData.initialMaterial) {
-            c.userData.initialMaterial = c.material.clone();
-        }
-        if (c.material.color.getHex() === 0x00ffff && !selectedCabinets.includes(c)) {
-            console.log('Restoring countertop material:', c.userData.materialType, c.userData.solidColor);
-            c.material.dispose();
-            c.material = c.userData.initialMaterial.clone();
-        }
-    });
-    selectedFaceIndex = -1;
+    // --- Сохраняем предыдущее выделение ---
+    // Копируем массив selectedCabinets ДО его изменения, чтобы знать, с чего снимать подсветку
+    const previouslySelectedData = [...selectedCabinets];
 
+    // --- Сброс состояния (меню, поля, грань стены) ---
+    selectedFaceIndex = -1;
     // Скрываем все меню и поля ввода
     hideWindowMenu();
     hideSocketMenu();
@@ -4548,227 +4769,218 @@ renderer.domElement.addEventListener('click', (event) => {
     if (toBackInput) { toBackInput.remove(); toBackInput = null; }
     if (countertopDepthInput) { countertopDepthInput.remove(); countertopDepthInput = null; }
 
+    // --- Определение текущего выделения (обновление selectedCabinets) ---
+    let currentHitData = null;
     if (objectIntersects.length > 0) {
-        const intersect = objectIntersects[0];
-        const hitCabinet = cabinets.find(c => c.mesh === intersect.object);
-        const hitWindow = windows.find(w => w.mesh === intersect.object);
-        const hitCountertop = countertops.find(c => c === intersect.object);
+        const hitMesh = objectIntersects[0].object;
+        
+        currentHitData = cabinets.find(c => c.mesh === hitMesh) ||
+                         windows.find(w => w.mesh === hitMesh) ||
+                         countertops.find(c => c === hitMesh);
 
-        if (hitCountertop) {
-            if (!hitCountertop.userData.initialMaterial) {
-                hitCountertop.userData.initialMaterial = hitCountertop.material.clone();
-            }
-            if (event.ctrlKey) {
-                const index = selectedCabinets.indexOf(hitCountertop);
-                if (index === -1) {
-                    selectedCabinets.push(hitCountertop);
+        if (currentHitData) {
+            if (event.ctrlKey) { // Логика Ctrl+Click (добавить/удалить)
+                const index = selectedCabinets.indexOf(currentHitData);
+                if (index === -1) selectedCabinets.push(currentHitData);
+                else selectedCabinets.splice(index, 1);
+            } else { // Логика одиночного клика
+                if (selectedCabinets.length === 1 && selectedCabinets[0] === currentHitData) {
+                    selectedCabinets = []; // Повторный клик по выделенному -> снять выделение
                 } else {
-                    selectedCabinets.splice(index, 1);
-                }
-            } else {
-                selectedCabinets = [hitCountertop];
-                showCountertopDimensionsInput(hitCountertop, countertops, cabinets);
-            }
-            cabinets.forEach(c => {
-                if (selectedCabinets.includes(c)) {
-                    c.mesh.material.color.set(0x00ffff);
-                    c.edges.material.color.set(0xff00ff);
-                } else {
-                    const hasIntersection = checkCabinetIntersections(c);
-                    c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
-                    c.edges.material.color.set(0x000000);
-                }
-                c.mesh.material.needsUpdate = true;
-                c.edges.material.needsUpdate = true;
-            });
-            countertops.forEach(c => {
-                if (selectedCabinets.includes(c)) {
-                    c.material.color.set(0x00ffff); // Только выделение
-                } else if (c.material.color.getHex() === 0x00ffff) {
-                    c.material.dispose();
-                    c.material = c.userData.initialMaterial.clone();
-                }
-                c.material.needsUpdate = true;
-            });
-        } else if (hitCabinet) {
-            if (event.ctrlKey) {
-                const index = selectedCabinets.indexOf(hitCabinet);
-                if (index === -1) {
-                    selectedCabinets.push(hitCabinet);
-                } else {
-                    selectedCabinets.splice(index, 1);
-                }
-                cabinets.forEach(c => {
-                    if (selectedCabinets.includes(c)) {
-                        c.mesh.material.color.set(0x00e0e0);
-                        c.edges.material.color.set(0xff00ff);
-                    } else {
-                        const hasIntersection = checkCabinetIntersections(c);
-                        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
-                        c.edges.material.color.set(0x000000);
+                    selectedCabinets = [currentHitData]; // Выделить только этот объект
+                    // Показ меню/полей для одиночного выделения
+                    if (currentHitData.userData?.type === 'countertop') { 
+                        showCountertopDimensionsInput(currentHitData, countertops, cabinets); 
+                    } else if (['lowerCabinet', 'upperCabinet'].includes(currentHitData.type) && currentHitData.wallId) {
+                         showCabinetDimensionsInput(currentHitData, cabinets); 
+                         //console.log("Cabinet Hit:", hitMesh); // Оставляем лог
+                    } else if (currentHitData.type === 'freestandingCabinet') {
+                        showFreestandingCabinetDimensions(currentHitData, cabinets);
+                        //console.log("Free Cabinet Hit:", hitMesh); // Оставляем лог
                     }
-                    c.mesh.material.needsUpdate = true;
-                    c.edges.material.needsUpdate = true;
-                });
-                countertops.forEach(c => {
-                    if (selectedCabinets.includes(c)) {
-                        c.material.color.set(0x00e0e0);
-                    } else if (c.material.color.getHex() === 0x00ffff) {
-                        c.material.dispose();
-                        c.material = c.userData.initialMaterial.clone();
-                    }
-                    c.material.needsUpdate = true;
-                });
-                if (selectedCabinets.length === 1) {
-                    selectedCabinet = hitCabinet;
-                    if (['lowerCabinet', 'upperCabinet'].includes(hitCabinet.type) && hitCabinet.wallId) {
-                        showCabinetDimensionsInput(hitCabinet, cabinets);
-                    } else if (hitCabinet.type === 'freestandingCabinet') {
-                        showFreestandingCabinetDimensions(hitCabinet, cabinets);
-                    }
-                }
-            } else {
-                selectedCabinets = [hitCabinet];
-                selectedCabinet = hitCabinet;
-                cabinets.forEach(c => {
-                    if (c === hitCabinet) {
-                        c.mesh.material.color.set(0x00ffff);
-                        c.edges.material.color.set(0xff00ff);
-                    } else {
-                        const hasIntersection = checkCabinetIntersections(c);
-                        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
-                        c.edges.material.color.set(0x000000);
-                    }
-                    c.mesh.material.needsUpdate = true;
-                    c.edges.material.needsUpdate = true;
-                });
-                countertops.forEach(c => {
-                    if (c.material.color.getHex() === 0x00ffff) {
-                        c.material.dispose();
-                        c.material = c.userData.initialMaterial.clone();
-                    }
-                    c.material.needsUpdate = true;
-                });
-                lastSelectedCabinet = null;
-                lastCabinetState = null;
-                if (['lowerCabinet', 'upperCabinet'].includes(hitCabinet.type) && hitCabinet.wallId) {
-                    showCabinetDimensionsInput(hitCabinet, cabinets);
-                } else if (hitCabinet.type === 'freestandingCabinet') {
-                    showFreestandingCabinetDimensions(hitCabinet, cabinets);
+
+                    // ... и т.д. ...
                 }
             }
-        } else if (hitWindow) {
+        } else { // Кликнули на неизвестный объект из intersectableMeshes
             selectedCabinets = [];
-            selectedCabinet = null;
-            // Сбрасываем выделение столешниц при клике по окну
-            countertops.forEach(c => {
-            if (c.material.color.getHex() === 0x00ffff) {
-                c.material.dispose();
-                c.material = c.userData.initialMaterial.clone();
-                c.material.needsUpdate = true;
-            }
-        });
-            const groupId = hitWindow.groupId;
-            if (groupId) {
-                windows.forEach(w => {
-                    if (w.groupId === groupId) {
-                        w.mesh.material.color.set(0x00ffff);
-                        w.edges.material.color.set(0x00ffff);
-                        w.mesh.material.needsUpdate = true;
-                        w.edges.material.needsUpdate = true;
-                    }
-                });
-            } else {
-                hitWindow.mesh.material.color.set(0x00ffff);
-                hitWindow.edges.material.color.set(0x00ffff);
-                hitWindow.mesh.material.needsUpdate = true;
-                hitWindow.edges.material.needsUpdate = true;
-            }
         }
-    } else if (wallIntersects.length > 0) {
-        selectedCabinets = [];
-        selectedCabinet = null;
-        // Сбрасываем выделение столешниц при клике на стену
-        countertops.forEach(c => {
-            if (c.material.color.getHex() === 0x00ffff) {
-                c.material.dispose();
-                c.material = c.userData.initialMaterial.clone();
-                c.material.needsUpdate = true;
-            }
-        });
+    } else if (wallIntersects.length > 0) { // Клик по стене
+        //console.log("Wall intersection detected.");
+        selectedCabinets = []; // Сбрасываем выделение ОБЪЕКТОВ
+        selectedCabinet = null; // Сбрасываем одиночный выбор шкафа
+        // outlinePass.selectedObjects = []; // Если бы использовали OutlinePass, очистили бы и его
+    
+        // --- НАЧАЛО: Возвращенная логика определения selectedFaceIndex ---
         const intersect = wallIntersects[0];
-        const normal = intersect.face.normal.clone().applyEuler(cube.rotation);
-        const cameraDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-
-        faceNormals.forEach((face, index) => {
-            const globalNormal = face.normal.clone().applyEuler(cube.rotation);
-            const dot = globalNormal.dot(cameraDirection);
-
-            if (dot > 0) {
-                const vertices = getFaceVertices(face.id);
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-                vertices.forEach(vertex => {
-                    const proj = vertex.clone().applyMatrix4(cube.matrixWorld).project(camera);
-                    minX = Math.min(minX, proj.x);
-                    minY = Math.min(minY, proj.y);
-                    maxX = Math.max(maxX, proj.x);
-                    maxY = Math.max(maxY, proj.y);
-                });
-
-                if (mouse.x >= minX && mouse.x <= maxX && mouse.y >= minY && mouse.y <= maxY) {
-                    const angle = normal.angleTo(face.normal);
-                    if (angle <= Math.PI / 2) {
-                        selectedFaceIndex = index;
+        // Проверяем, есть ли лицо у пересечения (может быть пересечение с ребром?)
+        if (intersect.face) {
+            const normal = intersect.face.normal.clone().applyEuler(cube.rotation); // Нормаль грани, по которой кликнули
+            const cameraDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); // Направление камеры
+    
+            let bestMatchIndex = -1; // Индекс лучшего совпадения грани
+            let highestDot = -Infinity; // Для поиска самой "фронтальной" грани
+    
+            faceNormals.forEach((face, index) => { // faceNormals - твой массив данных о гранях
+                const globalNormal = face.normal.clone().applyEuler(cube.rotation); // Глобальная нормаль грани из массива
+                const dot = globalNormal.dot(cameraDirection); // Проверка видимости грани для камеры
+    
+                // Обрабатываем только грани, видимые камере (dot > 0)
+                // Можно добавить порог, например dot > 0.1, чтобы исключить грани "на ребре"
+                if (dot > 0) {
+                    // Проверяем, попала ли мышь в экранные границы этой грани
+                    // Функция getFaceVertices должна возвращать вершины грани в локальных координатах куба
+                    const vertices = getFaceVertices(face.id); // Убедись, что эта функция работает
+                    if (vertices && vertices.length > 0) {
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                        vertices.forEach(vertex => {
+                            const proj = vertex.clone().applyMatrix4(cube.matrixWorld).project(camera);
+                            minX = Math.min(minX, proj.x); minY = Math.min(minY, proj.y);
+                            maxX = Math.max(maxX, proj.x); maxY = Math.max(maxY, proj.y);
+                        });
+    
+                        // Если клик внутри экранных границ грани
+                        if (mouse.x >= minX && mouse.x <= maxX && mouse.y >= minY && mouse.y <= maxY) {
+                            // Дополнительно проверяем, что нормаль пересеченной грани совпадает
+                            // с нормалью текущей грани из faceNormals (на случай неточностей Raycaster'а)
+                            const angle = normal.angleTo(globalNormal);
+                            // Сравниваем с небольшим допуском (например, ~6 градусов)
+                            if (angle < 0.1) {
+                                 // Если эта грань "более фронтальна" к камере, чем предыдущая найденная
+                                 if (dot > highestDot) {
+                                     highestDot = dot;
+                                     bestMatchIndex = index; // Запоминаем индекс этой грани
+                                 }
+                            }
+                        }
+                    } else {
+                         console.warn("getFaceVertices returned no vertices for face:", face.id);
                     }
                 }
-            }
-        });
-    } else {
-        selectedCabinets = [];
-        selectedCabinet = null;
-        // Сбрасываем выделение столешниц при клике в пустоту
-        countertops.forEach(c => {
-            if (c.material.color.getHex() === 0x00ffff) {
-                c.material.dispose();
-                c.material = c.userData.initialMaterial.clone();
-                c.material.needsUpdate = true;
-            }
-        });
+            });
+    
+            selectedFaceIndex = bestMatchIndex; // Устанавливаем найденный индекс (-1, если не найдено)
+            console.log("Wall face selected index:", selectedFaceIndex); // Лог для проверки
+        } else {
+             // Пересечение со стеной есть, но нет face? Странно. Сбрасываем индекс.
+             console.warn("Wall intersection detected, but no face found.");
+             selectedFaceIndex = -1;
+        }
+        // --- КОНЕЦ: Возвращенная логика определения selectedFaceIndex ---
+    
+        //updateSelectedFaceDisplay(); // Обновляем UI для грани
+    } else { // Клик в пустоту
+        selectedCabinets = []; // Снять выделение объектов
     }
 
-    //console.log('Before updateHint');
-    updateHint(selectedCabinets.length > 0 ? 'Выделено шкафов: ' + selectedCabinets.length : 'Выделите шкафы');
-    //console.log('Before updateCountertopButtonVisibility');
-    updateCountertopButtonVisibility();
-    //console.log('Before updateEdgeColors');
-    updateEdgeColors();
-    //console.log('Before updateSelectedFaceDisplay');
-    updateSelectedFaceDisplay();
-    //console.log('After all updates');
-});
+    // Обновляем вспомогательную переменную selectedCabinet (если она нужна где-то еще)
+    selectedCabinet = (selectedCabinets.length === 1 && selectedCabinets[0].mesh) ? selectedCabinets[0] : null;
 
-// Новый обработчик для начала перетаскивания
+
+    // --- Обновление ВИЗУАЛЬНОЙ подсветки (Emissive) ---
+    // Все объекты, которые МОГЛИ БЫТЬ выделены
+    const allHighlightableData = [...cabinets, ...windows, ...countertops];
+
+    allHighlightableData.forEach(itemData => {
+        const mesh = itemData.mesh || itemData; // Получаем меш
+        if (!mesh || !mesh.material || !mesh.material.emissive) {
+            // Пропускаем, если нет меша, материала или материал не поддерживает emissive
+            // (MeshBasicMaterial не поддерживает, используй MeshPhongMaterial или MeshStandardMaterial)
+            // if(mesh && mesh.material) console.warn(`Material ${mesh.material.type} on ${mesh.uuid} does not support emissive highlight.`);
+            return;
+        }
+
+        const isNowSelected = selectedCabinets.includes(itemData);
+        const wasPreviouslySelected = previouslySelectedData.includes(itemData); // Проверяем по старому массиву
+
+        // Снимаем подсветку, если был выделен, а теперь нет
+        if (wasPreviouslySelected && !isNowSelected) {
+            mesh.material.emissive.setHex(mesh.userData.originalEmissive || 0x000000);
+            mesh.material.emissiveIntensity = mesh.userData.originalIntensity === undefined ? 1.0 : mesh.userData.originalIntensity; // Восстанавливаем интенсивность (по умолчанию 1?)
+            mesh.material.needsUpdate = true;
+            delete mesh.userData.originalEmissive;
+            delete mesh.userData.originalIntensity;
+            mesh.userData.isHighlighted = false; // Сбрасываем флаг (если используешь)
+            // console.log(`Unhighlighted: ${mesh.uuid}`);
+        }
+        // Включаем подсветку, если выделен сейчас, а раньше не был
+        else if (isNowSelected && !wasPreviouslySelected) {
+            // Сохраняем исходные значения перед изменением
+            mesh.userData.originalEmissive = mesh.material.emissive.getHex();
+            mesh.userData.originalIntensity = mesh.material.emissiveIntensity;
+            // Применяем подсветку
+            mesh.material.emissive.setHex(HIGHLIGHT_EMISSIVE_COLOR);
+            mesh.material.emissiveIntensity = HIGHLIGHT_EMISSIVE_INTENSITY;
+            mesh.material.needsUpdate = true;
+            mesh.userData.isHighlighted = true; // Устанавливаем флаг (если нужен)
+            // console.log(`Highlighted: ${mesh.uuid}`);
+        }
+    });
+
+
+    // --- Обновление ДРУГИХ визуальных состояний (цвет пересечений и т.д.) ---
+     cabinets.forEach(c => {
+        const hasIntersection = checkCabinetIntersections(c);
+        // Устанавливаем базовый цвет или цвет пересечения (подсветка emissive не мешает)
+        c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
+        c.mesh.material.needsUpdate = true;
+        // ... (обновление ребер шкафов, если нужно) ...
+     });
+     windows.forEach(w => {
+         // Аналогично для окон, если нужно
+         w.mesh.material.color.set(w.initialColor);
+         w.mesh.material.needsUpdate = true;
+     });
+     // Для столешниц цвет не меняем, т.к. там текстура
+
+
+    // --- Обновление UI подсказок ---
+    updateHint(selectedCabinets.length > 0 ? 'Выделено объектов: ' + selectedCabinets.length : 'Выделите объект или стену');
+    updateCountertopButtonVisibility();
+    updateEdgeColors(); // Возможно, обновить цвет ребер стен?
+    updateSelectedFaceDisplay();
+
+}); // Конец обработчика кликов
+
+// Новый обработчик для начала перетаскивания с копированием через shift
 renderer.domElement.addEventListener('mousedown', (event) => {
-    if (!cube || event.button !== 0) return; // Только левая кнопка
+    // Только левая кнопка, не во время другого перетаскивания
+    if (!cube || event.button !== 0 || draggedCabinet) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
     raycaster.setFromCamera(mouse, camera);
-    const cabinetIntersects = raycaster.intersectObjects(cabinets.map(c => c.mesh), true);
+    const cabinetIntersects = raycaster.intersectObjects(cabinets.map(c => c.mesh), false);
 
     if (cabinetIntersects.length > 0) {
         const intersect = cabinetIntersects[0];
         const cabinetHit = cabinets.find(c => c.mesh === intersect.object);
-        if (cabinetHit) {
-            // Задержка для различения клика и перетаскивания
-            const dragTimeout = setTimeout(() => {
-                startDraggingCabinet(cabinetHit, event);
-            }, 200); // 200 мс — порог для начала перетаскивания
 
-            // Отменяем перетаскивание, если клик завершён раньше
+        if (cabinetHit) {
+            const wasSelectedBeforeDrag = selectedCabinets.includes(cabinetHit);
+            const isShiftPressed = event.shiftKey;
+
+            const dragTimeout = setTimeout(() => {
+                let cabinetToDrag = cabinetHit;
+
+                if (isShiftPressed) {
+                    const cloned = cloneCabinet(cabinetHit);
+                    cloned.mesh.position.copy(cabinetHit.mesh.position);
+                    cloned.mesh.rotation.copy(cabinetHit.mesh.rotation);
+                    cube.add(cloned.mesh);
+                    cabinets.push(cloned);
+                    cabinetToDrag = cloned;
+
+                    // Клонированный не должен быть выделен
+                    removeHighlight(cloned.mesh);
+                    selectedCabinets = [];
+                    selectedCabinet = null;
+                }
+
+                startDraggingCabinet(cabinetToDrag, event, wasSelectedBeforeDrag);
+            }, 200); // Порог для начала перетаскивания
+
             const cancelDrag = () => {
                 clearTimeout(dragTimeout);
                 document.removeEventListener('mouseup', cancelDrag);
@@ -4777,6 +4989,7 @@ renderer.domElement.addEventListener('mousedown', (event) => {
         }
     }
 });
+
 
 document.addEventListener('keydown', (event) => {
     if (!cube) return;
@@ -4811,27 +5024,27 @@ document.addEventListener('keydown', (event) => {
             rotateYSlider.value = rotateYDeg;
             break;
         case 'Enter':
-            //console.log("Enter pressed globally"); // Отладка
             const windowMenu = document.getElementById('windowMenu');
             const socketMenu = document.getElementById('socketMenu');
             const cabinetMenu = document.getElementById('cabinetMenu');
             const kitchenParamsPopup = document.getElementById('kitchenParamsPopup');
             const configMenu = document.getElementById('cabinetConfigMenu');
-
+        
             // Если открыто меню конфигурации, ничего не делаем
             if (configMenu && configMenu.style.display === 'block') {
-                return; // Enter уже обработан в showCabinetConfigMenu
+                applyCabinetConfigChanges(cabinetIndex, cabinets);
             }
-            // Обрабатываем Enter для других меню
-            if (windowMenu && windowMenu.style.display === 'block') {
-                const selectedObj = windows.find(w => w.mesh.material.color.getHex() === 0x00ffff);
-                if (selectedObj) applyObjectChanges(windows.indexOf(selectedObj));
-            } else if (socketMenu && socketMenu.style.display === 'block') {
-                const selectedObj = windows.find(w => w.mesh.material.color.getHex() === 0x00ffff);
-                if (selectedObj) applyObjectChanges(windows.indexOf(selectedObj));
-            } else if (cabinetMenu && cabinetMenu.style.display === 'block') {
-                const selectedCabinet = cabinets.find(c => c.mesh.material.color.getHex() === 0x00ffff);
-                if (selectedCabinet) applyCabinetChanges(cabinets.indexOf(selectedCabinet));
+        
+            if (selectedCabinets.length === 1) {
+                const selected = selectedCabinets[0];
+        
+                if (windowMenu && windowMenu.style.display === 'block' && ['window', 'door', 'opening'].includes(selected.type)) {
+                    applyObjectChanges(windows.indexOf(selected));
+                } else if (socketMenu && socketMenu.style.display === 'block' && selected.type === 'socket') {
+                    applyObjectChanges(windows.indexOf(selected));
+                } else if (cabinetMenu && cabinetMenu.style.display === 'block' && ['lowerCabinet', 'upperCabinet', 'freestandingCabinet'].includes(selected.type)) {
+                    applyCabinetChanges(cabinets.indexOf(selected));
+                }
             } else if (kitchenParamsPopup && kitchenParamsPopup.style.display === 'block') {
                 applyKitchenParams();
             } else {
@@ -4857,11 +5070,15 @@ let lastOffsetX = null; // Для свободно стоящих шкафов
 let lastOffsetZ = null; // Для свободно стоящих шкафов
 
 function animate() {
-    if (window.stopAnimation) return;
+    if (window.stopAnimation) {
+        console.log('Animation stopped by window.stopAnimation');
+        return;
+    }
     requestAnimationFrame(animate);
 
     cube.updateMatrixWorld(true);
     renderer.render(scene, camera);
+    //composer.render();
 
     const isRotating = cube.rotation.y !== lastRotationY;
     const isDragging = !!draggedCabinet;
@@ -5101,7 +5318,7 @@ function addCabinet(intersectPoint) {
     // --- Блок 4: Создание 3D-объекта ---
     // Создаём геометрию, материал и рёбра шкафа
     const geometry = new THREE.BoxGeometry(params.defaultWidth, params.defaultHeight, params.defaultDepth);
-    const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+    const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
     const mesh = new THREE.Mesh(geometry, material);
 
     const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -5141,10 +5358,11 @@ function addCabinet(intersectPoint) {
     // --- Блок 6: Добавление в сцену и создание объекта ---
     // Добавляем шкаф в комнату и сохраняем его в массив cabinets
     cube.add(mesh);
+    mesh.renderOrder = 1;
     const obj = {
         mesh: mesh,
         wallId: wallId,
-        initialColor: '#d2b48c',
+        initialColor: params.initialColor,
         width: params.defaultWidth,
         height: params.defaultHeight,
         depth: params.defaultDepth,
@@ -5191,8 +5409,8 @@ function addCabinet(intersectPoint) {
 
     // --- Блок 7: Визуальная индикация и вызов меню ---
     // Устанавливаем временный цвет и открываем меню конфигурации
-    mesh.material.color.set(0x00ffff);
-    edges.material.color.set(0x00ffff);
+    //mesh.material.color.set(0x00ffff);
+    //edges.material.color.set(0x00ffff);
     mesh.material.needsUpdate = true;
     edges.material.needsUpdate = true;
 
@@ -5249,7 +5467,7 @@ function addUpperCabinet(intersectPoint) {
     // --- Блок 4: Создание 3D-объекта ---
     // Создаём геометрию, материал и рёбра шкафа
     const geometry = new THREE.BoxGeometry(params.defaultWidth, params.defaultHeight, params.defaultDepth);
-    const material = new THREE.MeshBasicMaterial({ color: params.initialColor });
+    const material = new THREE.MeshStandardMaterial({ color: params.initialColor });
     const mesh = new THREE.Mesh(geometry, material);
 
     const edgesGeometry = new THREE.EdgesGeometry(geometry);
@@ -5310,8 +5528,8 @@ function addUpperCabinet(intersectPoint) {
 
     // --- Блок 7: Визуальная индикация и вызов меню ---
     // Устанавливаем временный цвет и открываем меню конфигурации
-    mesh.material.color.set(0x00ffff);
-    edges.material.color.set(0x00ffff);
+    mesh.material.color.set(0xEEEEEE);
+    //edges.material.color.set(0x00ffff);
     mesh.material.needsUpdate = true;
     edges.material.needsUpdate = true;
 
@@ -5470,7 +5688,7 @@ function loadProject() {
                         windows = projectState.windows.map(obj => {
                             const mesh = new THREE.Mesh(
                                 new THREE.BoxGeometry(obj.width, obj.height, obj.depth),
-                                new THREE.MeshBasicMaterial({ color: obj.initialColor })
+                                new THREE.MeshStandardMaterial({ color: obj.initialColor })
                             );
                             const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry);
                             const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
@@ -5489,7 +5707,7 @@ function loadProject() {
                         cabinets = projectState.cabinets.map(cabinet => {
                             const mesh = new THREE.Mesh(
                                 new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth),
-                                new THREE.MeshBasicMaterial({ color: cabinet.initialColor })
+                                new THREE.MeshStandardMaterial({ color: cabinet.initialColor })
                             );
                             const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry);
                             const edges = new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
@@ -6055,7 +6273,7 @@ window.addEventListener('resize', () => {
 function updateCountertopButtonVisibility() {
     const hasLowerCabinet = selectedCabinets.some(cab =>
         (cab.type === 'lowerCabinet' && !cab.isHeightIndependent) ||
-        (cab.type === 'freestandingCabinet' && cab.height <= kitchenGlobalParameters.standardHeight)
+        (cab.type === 'freestandingCabinet')
     );
     countertopButton.style.display = hasLowerCabinet ? 'block' : 'none';
 }
@@ -6110,12 +6328,12 @@ countertopButton.addEventListener('click', () => {
     selectedCabinets = filteredCabinets;
     cabinets.forEach(c => {
         if (selectedCabinets.includes(c)) {
-            c.mesh.material.color.set(0x00e0e0);
-            c.edges.material.color.set(0xff00ff);
+            //c.mesh.material.color.set(0x00e0e0);
+            //c.edges.material.color.set(0xff00ff);
         } else {
             const hasIntersection = checkCabinetIntersections(c);
             c.mesh.material.color.set(hasIntersection ? 0xff0000 : c.initialColor);
-            c.edges.material.color.set(0x000000);
+            //c.edges.material.color.set(0x000000);
         }
         c.mesh.material.needsUpdate = true;
         c.edges.material.needsUpdate = true;
@@ -6481,9 +6699,10 @@ function updateDepthForWall(wallId, newDepthM) {
     if (depthActuallyChanged) {
         cabinets.forEach(cab => {
             if (cab.type === 'lowerCabinet' && cab.wallId === wallId) {
-                 console.log(` - Updating cabinet ${cab.mesh.uuid} offset due to depth change`);
+                console.log(`Checking cabinet: type=${cab.type}, wallId=${cab.wallId}, targetWallId=${wallId}, UUID=${cab.mesh?.uuid}`);
                  // Пересчитываем отступ (он сам возьмет новую глубину через getCountertopDepthForWall)
                  cab.offsetFromParentWall = calculateLowerCabinetOffset(cab);
+
                  // Обновляем позицию шкафа
                  updateCabinetPosition(cab);
             }
@@ -6495,6 +6714,57 @@ function updateDepthForWall(wallId, newDepthM) {
     // requestRenderIfNotRequested(); // Возможно, нужен вызов рендера
 }
 
+function setupPostprocessing() {
+    composer = new EffectComposer(renderer);
+    renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+    // Настройки внешнего вида обводки (подбери по вкусу)
+    outlinePass.edgeStrength = 3.0;    // Сила
+    outlinePass.edgeGlow = 0.5;      // Свечение
+    outlinePass.edgeThickness = 1.0;   // Толщина
+    outlinePass.pulsePeriod = 0;     // Пульсация (0 = нет)
+    outlinePass.visibleEdgeColor.set('#00ffff'); // Цвет видимых ребер (голубой)
+    outlinePass.hiddenEdgeColor.set('#005588');  // Цвет ребер за объектами (темнее)
+    // Важно: Начальный массив выделенных объектов пуст
+    outlinePass.selectedObjects = [];
+    composer.addPass(outlinePass);
+
+    // Опционально: Сглаживание FXAA (рекомендуется)
+    /*
+    const fxaaPass = new ShaderPass(FXAAShader);
+    const pixelRatio = renderer.getPixelRatio();
+    fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+    fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+    composer.addPass(fxaaPass);
+    */
+
+    console.log("Postprocessing setup complete.");
+    console.log('Composer initialized:', composer);
+    console.log('OutlinePass initialized:', outlinePass);
+}
+
+function onWindowResize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(width, height);
+    composer.setSize(width, height); // Обновляем composer
+    outlinePass.resolution.set(width, height); // Обновляем OutlinePass
+
+    // Опционально: Обновляем FXAA
+    /*
+    const pixelRatio = renderer.getPixelRatio();
+    fxaaPass.material.uniforms['resolution'].value.x = 1 / (width * pixelRatio);
+    fxaaPass.material.uniforms['resolution'].value.y = 1 / (height * pixelRatio);
+    */
+}
+
+//window.addEventListener('resize', onWindowResize);
 
 function logCountertopInfo(countertop) {
     if (!countertop || !countertop.userData) {
@@ -6528,3 +6798,25 @@ function logCountertopInfo(countertop) {
     console.log(`Передний угол: ${frontOffset} мм`);
     console.log(`Задний угол: ${backOffset} мм`);
 }
+
+
+// Привязка слушателей
+//document.getElementById('applyRoomChanges').addEventListener('click', applySize());
+// Экспорт нужных функций в window
+window.addObject = addObject;
+window.undoLastAction = undoLastAction;
+window.setLeftView = setLeftView;
+window.setFrontView = setFrontView;
+window.setTopView = setTopView;
+window.setIsometricView = setIsometricView;
+window.saveProject = saveProject;
+window.loadProject = loadProject;
+window.applySize = applySize;
+window.applyObjectChanges = applyObjectChanges;
+window.deleteWindow = deleteWindow;
+window.addAdjacentSocket = addAdjacentSocket;
+window.showCabinetConfigMenu = showCabinetConfigMenu;
+window.applyCabinetChanges = applyCabinetChanges;
+window.deleteCabinet = deleteCabinet;
+window.applyCabinetConfigChanges = applyCabinetConfigChanges;
+window.hideCabinetConfigMenu = hideCabinetConfigMenu;

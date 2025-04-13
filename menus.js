@@ -1,5 +1,5 @@
 // menus.js
-function createCabinetConfigMenu(cabinetIndex) {
+export function createCabinetConfigMenu(cabinetIndex, cabinets) {
     const cabinet = cabinets[cabinetIndex];
     
     let colorValue = cabinet.initialColor;
@@ -24,7 +24,8 @@ function createCabinetConfigMenu(cabinetIndex) {
     return html;
 }
 
-function updateSpecificConfigFields(cabinetIndex) {
+
+export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams) {
     const cabinet = cabinets[cabinetIndex];
     const cabinetType = document.getElementById('cabinetType').value;
     const cabinetConfig = document.getElementById('cabinetConfig').value;
@@ -353,7 +354,7 @@ function updateSpecificConfigFields(cabinetIndex) {
     specificFields.innerHTML = fieldsHtml;
 }
 
-function showCabinetConfigMenu(cabinetIndex, x, y) { // Добавлены параметры x, y
+export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGlobalParams) { // Добавлены параметры x, y
     //console.log('showCabinetConfigMenu called with x:', x, 'y:', y); // Отладочный вывод
 
     let menu = document.getElementById('cabinetConfigMenu');
@@ -364,7 +365,7 @@ function showCabinetConfigMenu(cabinetIndex, x, y) { // Добавлены па�
         document.body.appendChild(menu);
     }
 
-    menu.innerHTML = createCabinetConfigMenu(cabinetIndex);
+    menu.innerHTML = createCabinetConfigMenu(cabinetIndex, cabinets);
 
     // Устанавливаем начальную позицию в точке клика
     menu.style.left = `${x + 30}px`; // Смещение вправо, как в showCabinetMenu
@@ -396,12 +397,12 @@ function showCabinetConfigMenu(cabinetIndex, x, y) { // Добавлены па�
     // Обновляем специфичные поля при изменении типа или конфигурации
     const typeSelect = document.getElementById('cabinetType');
     const configSelect = document.getElementById('cabinetConfig');
-    const updateFields = () => updateSpecificConfigFields(cabinetIndex);
+    const updateFields = () => updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
     typeSelect.addEventListener('change', updateFields);
     configSelect.addEventListener('change', updateFields);
 
     // Изначально заполняем поля
-    updateSpecificConfigFields(cabinetIndex);
+    updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
 
     // Корректируем позицию, чтобы не выходить за пределы окна
     setTimeout(() => {
@@ -423,7 +424,7 @@ function showCabinetConfigMenu(cabinetIndex, x, y) { // Добавлены па�
     }, 0);
 }
 
-function hideCabinetConfigMenu() {
+export function hideCabinetConfigMenu() {
     const menu = document.getElementById('cabinetConfigMenu');
     if (menu) {
         menu.style.display = 'none';
