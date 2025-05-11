@@ -58,7 +58,10 @@ body {
     background: #f0f0f0;
     padding: 10px;
     box-sizing: border-box;
-    /*margin-top: 44px;*/
+    /* Добавляем или изменяем overflow-y */
+    overflow-y: auto; /* Показывает скроллбар только когда контент не помещается */
+    /* Убедимся, что высота панели ограничена */
+    height: 100%; /* Или calc(100vh - высота_верхнего_меню) если нужно */
 }
 
 #canvasContainer {
@@ -317,62 +320,110 @@ button {
 
 
 
-/* Стили для всплывающих меню */
+/* Стили для ВСЕХ всплывающих меню (основное и конфигурации) */
 .popup-menu {
     position: absolute;
     background-color: #fff;
     border: 1px solid #ccc;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    padding: 10px;
-    z-index: 1000;
-    width: 300px; /* Фиксированная ширина, как в showCabinetConfigMenu */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* Немного мягче тень */
+    padding: 15px; /* Увеличим отступы */
+    z-index: 1000; /* Базовый z-index */
+    width: 400px;
     font-family: Arial, sans-serif;
+    box-sizing: border-box;
+    display: flex; /* Используем flex для компоновки */
+    flex-direction: column; /* Заголовок, контент, кнопки - друг под другом */
+
+    /* --- Ограничение высоты и прокрутка для ВСЕГО меню --- */
+    max-height: calc(90vh - 40px); /* Макс. высота = 90% окна минус отступы */
+    /* overflow: hidden; */ /* Убираем overflow с самого меню */
+}
+
+.popup-menu .menu-buttons {
+    display: flex;
+    /* justify-content: space-around; */ /* Заменяем */
+    justify-content: space-between; /* Прижмет крайние кнопки */
+    flex-wrap: wrap; /* Разрешаем перенос кнопок */
+    gap: 8px; /* Небольшой отступ между кнопками, если перенесутся */
+    padding-top: 5px;
+    border-top: 1px solid #eee;
+    margin-top: auto;
+}
+
+.popup-menu .menu-buttons button {
+    padding: 6px 12px; /* Уменьшаем padding */
+    font-size: 12px;  /* Уменьшаем шрифт */
+    min-width: auto;  /* Убираем минимальную ширину */
+    /* Остальные стили кнопок (border, background и т.д.) оставляем */
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: white; /* Белый текст */
+    flex-grow: 1; /* Позволим кнопкам растягиваться, если есть место */
+    text-align: center; /* Центрируем текст */
 }
 
 .popup-menu h3 {
     margin: 0 0 10px;
     font-size: 16px;
     text-align: center;
+    flex-shrink: 0; /* Заголовок не должен сжиматься */
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
 }
 
+/* Контейнер для ОСНОВНОГО содержимого меню (полей) */
 .menu-content {
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Расстояние между полями */
+    gap: 10px;
+    /* --- Прокрутка добавляется ТОЛЬКО для .scrollable --- */
+    flex-grow: 1; /* Позволяет этому блоку растягиваться */
+    overflow-y: auto; /* Включаем скролл для этого блока */
+    padding-right: 5px; /* Небольшой отступ для скроллбара */
+    margin-bottom: 10px; /* Отступ перед кнопками */
 }
 
+/* Стили для полей внутри .menu-content (остаются как были или настраиваются) */
 .menu-content label {
     display: flex;
-    flex-direction: column; /* Название над полем */
-    font-size: 14px;
+    flex-direction: column;
+    font-size: 13px; /* Чуть меньше */
+    font-weight: 500; /* Немного тоньше */
 }
 
-.menu-content input[type="number"],
-.menu-content input[type="text"] {
-    width: 100%; /* Занимают всю ширину контейнера */
-    padding: 5px;
-    margin-top: 5px; /* Отступ между названием и полем */
-    box-sizing: border-box; /* Учитываем padding в ширине */
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
+.menu-content input,
 .menu-content select {
-    width: 100%; /* Занимают всю ширину контейнера */
-    padding: 5px;
-    margin-top: 5px; /* Отступ между названием и полем */
-    box-sizing: border-box; /* Учитываем padding в ширине */
+    width: 100%;
+    padding: 6px 8px;
+    margin-top: 4px;
+    box-sizing: border-box;
     border: 1px solid #ccc;
-    border-radius: 4px;
+    border-radius: 3px;
+    font-size: 13px;
 }
 
 .menu-content input[type="color"] {
-    width: 100px;          /* Фиксированная ширина */
-    height: 35px;          /* Фиксированная высота */
-    border-radius: 3px;    /* Радиус углов */
-    margin: 0;             /* Убираем лишние отступы */
-    padding: 0;            /* Убираем внутренние отступы */
-    box-sizing: border-box;
+    width: 50px; /* Меньше */
+    height: 28px; /* Меньше */
+    padding: 1px;
+}
+
+.menu-content input[disabled],
+.menu-content input.readonly-style[readonly],
+.menu-content select[disabled] {
+    background-color: #eee;
+    cursor: not-allowed;
+}
+
+/* Контейнер для кнопок внизу */
+.menu-buttons {
+    display: flex;
+    justify-content: space-around; /* Равномерно распределить */
+    flex-shrink: 0; /* Кнопки не должны сжиматься */
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+    margin-top: auto; /* Прижать кнопки к низу flex-контейнера */
 }
 
 .menu-content .menu-buttons {
@@ -382,56 +433,40 @@ button {
 }
 
 .menu-content button {
-    padding: 8px 15px;
+    padding: 5px 10px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
 }
 
-.menu-content button:first-child { /* Кнопка "Применить" */
-    background-color: #28a745; /* Зелёный цвет */
-    color: #fff;
-}
-
-.menu-content button:last-child { /* Кнопка "Отмена" */
-    background-color: #dc3545; /* Красный для контраста */
-    color: #fff;
-}
-
-/* styles.css (добавить в конец) */
-
-
-.menu-content.scrollable {
-   /* position: absolute;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    padding: 10px;
-    z-index: 1000;
-    width: 300px; 
-    font-family: Arial, sans-serif;*/
-    /*max-height: 400px; /* Как в текущем menus.js */
-    overflow-y: auto; 
-}
-
-.menu-buttons {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-}
-
 .menu-buttons button {
-    padding: 5px 10px;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    background: #fff;
+    padding: 5px 10px; /* Чуть меньше */
+    border: none;
+    border-radius: 4px;
     cursor: pointer;
+    font-size: 13px;
+    min-width: 100px; /* Минимальная ширина */
 }
 
-/* styles.css (добавить или обновить) */
-.menu-content input[disabled] {
-    background-color: #e0e0e0; /* Серый фон для неактивного поля */
-    cursor: not-allowed;       /* Курсор "запрещено" */
+
+/* Стили для кнопок Применить/Отмена/Детализация */
+/* Кнопка детализации (первая) */
+.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* Голубой? */
+/* Кнопка Применить (вторая) */
+.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Зеленый */
+/* Кнопка Отмена (третья) */
+.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Красный */
+
+
+/* Контейнер для ОСНОВНОГО содержимого (поля + кнопки) */
+.menu-content.scrollable {
+    display: flex; /* Добавляем flex */
+    flex-direction: column; /* Элементы внутри идут столбиком */
+    gap: 10px;
+    flex-grow: 1;
+    overflow-y: auto; /* Прокрутка для этого блока */
+    padding: 0 5px 10px 0; /* Добавляем padding снизу */
+    margin-bottom: 0; /* Убираем отступ снизу отсюда */
 }
 
 /* Стили для контейнера меню параметров кухни */
@@ -439,44 +474,64 @@ button {
     position: absolute;
     background-color: #fff;
     border: 1px solid #000;
-    padding: 10px;
+    padding: 12px; /* Уменьшаем общие отступы */
     z-index: 1000;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     font-family: Arial, sans-serif;
-    width: 250px; /* Фиксированная ширина для читаемости */
+    width: 260px; /* Можно чуть уже */
+    box-sizing: border-box;
+    max-height: 85vh; /* Оставляем ограничение высоты */
+    overflow-y: auto;
 }
-
 /* Стили для элементов внутри меню */
-.kitchen-params-menu div {
-    margin-bottom: 10px;
+/* Стили для элементов внутри меню */
+.kitchen-params-menu div { /* Контейнер label+input */
+    margin-bottom: 8px; /* Уменьшаем отступ между блоками */
 }
 
 .kitchen-params-menu label {
     display: block;
-    margin-bottom: 5px;
-    font-size: 14px;
+    margin-bottom: 3px; /* Уменьшаем отступ под лейблом */
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
 }
 
 .kitchen-params-menu input[type="number"],
 .kitchen-params-menu select {
     width: 100%;
-    padding: 5px;
-    font-size: 14px;
+    padding: 5px 7px; /* Уменьшаем вертикальный padding */
+    font-size: 13px;
     box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 3px;
 }
 
-.kitchen-params-menu input[type="button"] {
+.kitchen-params-menu input[type="button"] { /* Кнопки */
     width: 100%;
-    padding: 8px;
-    background-color: #4CAF50;
+    padding: 8px; /* Уменьшаем padding кнопки */
+    margin-top: 8px; /* Уменьшаем отступ перед кнопками */
+    background-color: #28a745;
     color: white;
     border: none;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px; /* Уменьшаем шрифт кнопки */
+    font-weight: bold;
+    transition: background-color 0.2s;
 }
 
 .kitchen-params-menu input[type="button"]:hover {
-    background-color: #45a049;
+    background-color: #218838;
+}
+
+/* Отдельный стиль для кнопки Настройки фасадов */
+.kitchen-params-menu #facadeSetsButton {
+    background-color: #007bff; /* Синий */
+    margin-top: 12px; /* Чуть больше отступ перед ней */
+}
+.kitchen-params-menu #facadeSetsButton:hover {
+    background-color: #0056b3;
 }
 
 
@@ -544,4 +599,431 @@ button {
 .context-menu input[type="text"],
 .context-menu select {
     margin-left: 10px;
+}
+
+
+/* новое меню для наборов фасадов */
+.facade-sets-manager {
+    position: absolute;
+    background-color: #fdfdfd;
+    border: 1px solid #ccc;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    z-index: 1001; /* Выше, чем меню параметров */
+    width: 800px; /* Широкое меню */
+    max-width: 90vw; /* Но не шире экрана */
+    max-height: 85vh; /* Ограничение высоты */
+    display: flex; /* Используем flexbox для компоновки */
+    flex-direction: column; /* Элементы идут сверху вниз */
+    font-family: Arial, sans-serif;
+    box-sizing: border-box;
+}
+
+.facade-sets-manager h3 {
+    margin: 0 0 15px;
+    font-size: 18px;
+    text-align: center;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.facade-sets-table-container {
+    flex-grow: 1; /* Занимает доступное пространство по высоте */
+    overflow-y: auto; /* Прокрутка для таблицы, если строк много */
+    margin-bottom: 15px;
+    border: 1px solid #eee; /* Рамка вокруг таблицы */
+}
+
+.facade-set-row {
+    display: flex;
+    align-items: center; /* Выравнивание по центру по вертикали */
+    border-bottom: 1px solid #eee;
+    padding: 8px 5px; /* Отступы внутри строки */
+}
+
+.facade-set-row.header {
+    background-color: #f8f8f8;
+    font-weight: bold;
+    font-size: 13px;
+    color: #555;
+    position: sticky; /* Залипающая шапка */
+    top: 0;
+    z-index: 1; /* Чтобы была над строками при прокрутке */
+}
+
+.facade-set-cell {
+    padding: 0 8px; /* Отступы внутри ячейки */
+    box-sizing: border-box;
+    display: flex; /* Для выравнивания содержимого ячейки */
+    align-items: center;
+}
+
+/* Задаем ширину колонок */
+.name-col { width: 20%; }
+.material-col { width: 20%; }
+.texture-col { width: 20%; }
+.color-col { width: 10%; text-align: center; }
+.thickness-col { width: 12%; }
+.actions-col { width: 8%; text-align: right; }
+
+/* Стили для полей ввода внутри таблицы */
+.facade-set-row input[type="text"],
+.facade-set-row select,
+.facade-set-row input[type="number"] {
+    width: 100%;
+    padding: 4px 6px;
+    font-size: 13px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    box-sizing: border-box;
+}
+
+.facade-set-row input[readonly],
+.facade-set-row select[disabled],
+.facade-set-row input[type="color"][disabled] {
+    background-color: #f0f0f0;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+/* Стиль для readonly поля толщины, которое не disabled */
+.facade-set-row input.readonly-style[readonly] {
+     background-color: #f0f0f0;
+     cursor: default;
+     opacity: 0.7;
+}
+
+
+.facade-set-row input[type="color"] {
+    width: 40px; /* Размер поля цвета */
+    height: 25px;
+    padding: 1px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+    margin: 0 auto; /* Центрирование в ячейке */
+}
+.facade-set-row input[type="color"][disabled] {
+    cursor: not-allowed;
+}
+
+
+.facade-set-row .delete-set-btn {
+    background: none;
+    border: none;
+    color: #dc3545; /* Красный цвет */
+    cursor: pointer;
+    font-size: 18px; /* Размер иконки корзины */
+    padding: 0 5px;
+    line-height: 1;
+    margin-left: auto; /* Прижимаем вправо */
+}
+.facade-set-row .delete-set-btn:hover {
+    color: #a71d2a; /* Темнее при наведении */
+}
+
+
+/* Кнопки внизу менеджера */
+.manager-buttons {
+    display: flex;
+    justify-content: space-between; /* Равномерное распределение кнопок */
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.manager-buttons button {
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    min-width: 120px; /* Минимальная ширина кнопок */
+}
+
+#addFacadeSetBtn {
+    background-color: #007bff; /* Синий */
+    color: white;
+}
+#addFacadeSetBtn:hover { background-color: #0056b3; }
+
+.manager-buttons button:nth-of-type(2) { /* Применить все */
+    background-color: #28a745; /* Зеленый */
+    color: white;
+}
+.manager-buttons button:nth-of-type(2):hover { background-color: #218838; }
+
+.manager-buttons button:nth-of-type(3) { /* Закрыть */
+    background-color: #6c757d; /* Серый */
+    color: white;
+}
+.manager-buttons button:nth-of-type(3):hover { background-color: #5a6268; }
+/* ---конец меню наборов фасадов---*/
+
+.facade-set-row .color-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #888;
+    margin-right: 6px;
+    vertical-align: middle; /* Выравнивание по вертикали с текстом */
+    flex-shrink: 0; /* Не сжиматься */
+}
+
+/* Улучшение отображения select с иконкой */
+.facade-set-cell.texture-col select {
+   /* Можно добавить padding-left, если текст слишком близко к иконке */
+   /* padding-left: 25px; */ /* Подберите значение */
+}
+
+/* Стиль для нередактируемой толщины */
+.facade-set-row input.readonly-style[readonly] {
+     background-color: #eee;
+     cursor: default;
+     /* Убедитесь, что он перекрывает другие стили input */
+}
+
+/* --- Стили для Менеджера Фасадов --- */
+.facade-sets-manager {
+    /* ... (существующие стили: position, background, border, etc.) ... */
+    width: 900px; /* Можно сделать шире */
+}
+
+.facade-set-row {
+    display: flex;
+    /* --- ИЗМЕНЕНИЕ: Выравнивание элементов внутри строки по центру вертикали --- */
+    align-items: center; /* Было */
+    /* align-items: stretch; */ /* Можно попробовать stretch, если хотите, чтобы элементы растягивались */
+    /* ----------------------------------------------------------------------- */
+    border-bottom: 1px solid #eee;
+    padding: 5px;
+    min-height: 40px; /* Зададим минимальную высоту строки для выравнивания */
+}
+
+.facade-set-row.header {
+    /* ... */
+     min-height: auto; /* Для шапки авто высота */
+}
+
+.facade-set-cell {
+    padding: 0 5px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+     /* --- ДОБАВЛЕНО: Заставляем ячейку растягиваться по высоте строки --- */
+     /* Это не обязательно, если align-items: center в .facade-set-row устраивает */
+     /* align-self: stretch; */
+     /* -------------------------------------------------------------------- */
+}
+
+/* Новые ширины колонок */
+.name-col { width: 25%; }
+.material-col { width: 20%; }
+.decor-color-col { width: 30%; } /* Объединенная колонка */
+.thickness-col { width: 15%; }
+.actions-col { width: 10%; text-align: right; }
+
+/* --- ИЗМЕНЕНИЕ: Общие стили для элементов управления в строке --- */
+.facade-set-row input[type="text"],
+.facade-set-row select,
+.facade-set-row input[type="number"],
+.facade-set-row .decor-select-btn { /* Добавили кнопку выбора сюда */
+    width: 100%;
+    height: 30px; /* Задаем единую высоту */
+    padding: 4px 8px; /* Скорректируем padding */
+    font-size: 13px;
+    border: 1px solid #ccc; /* Единая рамка */
+    border-radius: 3px;
+    box-sizing: border-box; /* Важно! */
+    vertical-align: middle; /* Дополнительное выравнивание */
+    line-height: normal; /* Сбрасываем line-height, чтобы не влиял на высоту */
+    margin: 0; /* Убираем внешние отступы по умолчанию */
+}
+/* ------------------------------------------------------------- */
+.facade-set-row input[readonly],
+.facade-set-row select[disabled] { /* Убрали input[type="color"] отсюда */
+    background-color: #f0f0f0;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+.facade-set-row input.readonly-style[readonly] {
+     background-color: #eee;
+     cursor: default;
+     /* opacity: 0.7; */ /* Можно убрать opacity для readonly */
+}
+
+/* --- ИЗМЕНЕНИЕ: Стили для input[type="color"] --- */
+.facade-set-row input[type="color"] {
+    width: 40px;
+    height: 30px; /* Такая же высота, как у других */
+    padding: 1px; /* Минимальный паддинг */
+    border: 1px solid #ccc; /* Единая рамка */
+    border-radius: 3px;
+    cursor: pointer;
+    margin: 0 auto;
+    box-sizing: border-box; /* Важно! */
+    vertical-align: middle; /* Выравнивание */
+}
+.facade-set-row input[type="color"][disabled] {
+    cursor: not-allowed;
+    background-color: #f0f0f0; /* Фон для disabled color input */
+    opacity: 0.7;
+    border-color: #ddd; /* Серая рамка */
+}
+/* ------------------------------------------------- */
+
+/* Стили для кнопки выбора декора/цвета */
+.decor-select-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 4px 8px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    overflow: hidden; /* Обрезать текст, если не влезает */
+}
+.decor-select-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.decor-select-btn .color-swatch,
+.decor-select-btn .decor-preview-img {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    flex-shrink: 0; /* Не сжиматься */
+    border: 1px solid #ddd; /* Рамка для квадрата/картинки */
+    object-fit: cover; /* Для img, чтобы не искажалась */
+}
+.decor-select-btn .decor-preview-img {
+    border: none; /* Убираем рамку для картинок */
+}
+
+.decor-select-btn .decor-select-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Многоточие для длинного текста */
+    flex-grow: 1; /* Занимать доступное место */
+}
+
+/* Стили для Модального Окна Выбора Декора */
+.decor-picker-modal {
+    display: none; /* Скрыто по умолчанию */
+    position: fixed; /* Поверх всего */
+    z-index: 1002; /* Выше менеджера */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Прокрутка, если нужно */
+    background-color: rgba(0, 0, 0, 0.4); /* Полупрозрачный фон */
+    padding-top: 60px; /* Отступ сверху */
+}
+
+.decor-picker-content {
+    background-color: #fefefe;
+    margin: auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 700px; /* Макс. ширина */
+    max-height: 80vh; /* Макс. высота */
+    display: flex;
+    flex-direction: column;
+    position: relative; /* Для позиционирования кнопки закрытия */
+    border-radius: 5px;
+}
+
+.decor-picker-close {
+    color: #aaa;
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.decor-picker-close:hover,
+.decor-picker-close:focus {
+    color: black;
+    text-decoration: none;
+}
+
+.decor-picker-header {
+    margin-bottom: 15px;
+    font-size: 16px;
+    font-weight: bold;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.decor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* Адаптивная сетка */
+    gap: 15px; /* Отступ между ячейками */
+    overflow-y: auto; /* Прокрутка для сетки */
+    padding: 5px;
+    flex-grow: 1; /* Занимать доступное место */
+    max-height: calc(80vh - 120px); /* Примерный расчет высоты сетки */
+}
+
+.decor-grid-item {
+    border: 1px solid #eee;
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    background-color: #fff;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between; /* Распределить контент */
+    min-height: 120px; /* Минимальная высота ячейки */
+}
+.decor-grid-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.decor-grid-item .decor-preview-img,
+.decor-grid-item .color-swatch {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 8px;
+    border: 1px solid #ddd;
+    object-fit: cover;
+}
+.decor-grid-item .color-swatch {
+     border-radius: 3px;
+}
+.decor-grid-item .decor-preview-img {
+     border: none;
+     border-radius: 3px;
+}
+
+
+.decor-grid-item span { /* Для текста */
+    font-size: 12px;
+    color: #333;
+    word-break: break-word; /* Перенос длинных слов */
+}
+
+/* Отдельно для color picker */
+.decor-color-picker-container {
+     padding: 20px;
+     text-align: center;
+}
+.decor-color-picker-container label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+.decor-color-picker-container input[type="color"] {
+     width: 100px;
+     height: 50px;
+     cursor: pointer;
+     border: 1px solid #ccc;
+     padding: 0;
 }

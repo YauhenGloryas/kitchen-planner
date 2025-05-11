@@ -1,0 +1,157 @@
+{
+    "ldsp": {
+      "name": "ЛДСП",
+      "defaultThickness": 18,
+      "isThicknessEditable": true,
+      "minThickness": 12,
+      "maxThickness": 22,
+      "useColorPicker": false,
+      "decors": [
+        { "value": "W960SM", "text": "W960 SM Белый классический", "displayColor": "#FCFDF5", "previewImage": null },
+        { "value": "W1000ST9", "text": "W1000 ST9 Белый Премиум", "displayColor": "#FCFDF5", "previewImage": null },
+        { "value": "W1100ST9", "text": "W1100 ST9 Белый альпийский", "displayColor": "#FCFDF5", "previewImage": null },
+        { "value": "U201ST9", "text": "U201 ST9 Серая галька", "displayColor": "#B5AF9F", "previewImage": null },
+        { "value": "U216ST9", "text": "U216 ST9 Камель бежевый", "displayColor": "#F9F2E2", "previewImage": null },
+        { "value": "U502ST9", "text": "U502 ST9 Синий дымчатый", "displayColor": "#557082", "previewImage": null },
+        { "value": "U604ST9", "text": "U604 ST9 Зелёный эвкалипт", "displayColor": "#757E74", "previewImage": null },
+        { "value": "U636ST9", "text": "U636 ST9 Фьёрд зелёный", "displayColor": "#929D9C", "previewImage": null },
+        { "value": "U640ST9", "text": "U640 ST9 Зелёный оливковый", "displayColor": "#9A9973", "previewImage": null },
+        { "value": "U702ST9", "text": "U702 ST9 Кашемир серый", "displayColor": "#D7CCBB", "previewImage": null },
+        { "value": "U727ST9", "text": "U727 ST9 Серый камень", "displayColor": "#A49A89", "previewImage": null },
+        { "value": "U732ST9", "text": "U732 ST9 Серый асфальт", "displayColor": "#838683", "previewImage": null },
+        { "value": "U780ST9", "text": "U780 ST9 Серый монументальный", "displayColor": "#777D81", "previewImage": null },
+        { "value": "U963ST9", "text": "U963 ST9 Диамант серый", "displayColor": "#4B4B4B", "previewImage": null },
+        { "value": "H1180ST37", "text": "H1180 ST37 Дуб Галифакс натур.", "displayColor": "#C0A98E", "previewImage": "textures/previews/ЛДСП/H1180.jpg" },
+        { "value": "H1181ST37", "text": "H1181 ST37 Дуб Галифакс табак", "displayColor": "#9A7C5E", "previewImage": "textures/previews/ЛДСП/H1181.jpg" },
+        { "value": "H1344ST37", "text": "H1344 ST37 Дуб Шерман коньяк корич.", "displayColor": "#966F51", "previewImage": "textures/previews/ЛДСП/H1344.jpg" },
+        { "value": "H1385ST40", "text": "H1385 ST40 Дуб Каселла натур.", "displayColor": "#D1B797", "previewImage": "textures/previews/ЛДСП/H1385.jpg" },
+        { "value": "H3176ST37", "text": "H3176 ST37 Дуб Галифакс олово", "displayColor": "#A89A8C", "previewImage": "textures/previews/ЛДСП/H3176.jpg" },
+        { "value": "H3317ST28", "text": "H3317 ST28 Дуб Кунео коричневый", "displayColor": "#7E644F", "previewImage": "textures/previews/ЛДСП/H3317.jpg" },
+        { "value": "H3408ST38", "text": "H3408 ST38 Лиственница горная корич.", "displayColor": "#6F5440", "previewImage": "textures/previews/ЛДСП/H3408.jpg" },
+        { "value": "F186ST9", "text": "F186 ST9 Бетон Чикаго светл.", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F186.jpg" },
+        { "value": "F187ST9", "text": "F187 ST9 Бетон Чикаго темн.", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F187.jpg" },
+        { "value": "F206ST9", "text": "F206 ST9 Камень Пьетра Гриджиа чёрн.", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F206.jpg" },
+        { "value": "F234ST76", "text": "F234 ST76 Сланец Скиваро светло-серый", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F234.jpg" },
+        { "value": "F416ST10", "text": "F416 ST10 Текстиль бежевый", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F416.jpg" },
+        { "value": "F527ST20", "text": "F527 ST20 Металл брашированный золотистый", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F527.jpg" },
+        { "value": "F800ST9", "text": "F800 ST9 Мрамор Кристалл", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F800.jpg" },
+        { "value": "F676ST75", "text": "F676 ST75 Камень Кальвия песочно-серый", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F676.jpg" },
+        { "value": "F637ST10", "text": "F637 ST10 Хромикс белый", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/F637.jpg" },
+        { "value": "testST10", "text": "тестовый материал", "displayColor": "#8F8F8F", "previewImage": "textures/previews/ЛДСП/test.jpg" }
+      ]
+    },
+    "agt_supramat": {
+      "name": "AGT Supramat",
+      "defaultThickness": 18,
+      "isThicknessEditable": false,
+      "minThickness": 18,
+      "maxThickness": 18,
+      "useColorPicker": false,
+      "decors": [
+          { "value": "AGT3010", "text": "AGT 3010", "displayColor": "#090A0E", "previewImage": null },
+          { "value": "AGT3011", "text": "AGT 3011", "displayColor": "#030C1E", "previewImage": null },
+          { "value": "AGT3012", "text": "AGT 3012", "displayColor": "#FCFDF5", "previewImage": null },
+          { "value": "AGT3013", "text": "AGT 3013", "displayColor": "#CCCABE", "previewImage": null },
+          { "value": "AGT3014", "text": "AGT 3014", "displayColor": "#4B4E53", "previewImage": null },
+          { "value": "AGT3015", "text": "AGT 3015", "displayColor": "#698384", "previewImage": null },
+          { "value": "AGT3017", "text": "AGT 3017", "displayColor": "#838683", "previewImage": null },
+          { "value": "AGT3018", "text": "AGT 3018", "displayColor": "#E8ECE6", "previewImage": null },
+          { "value": "AGT3019", "text": "AGT 3019", "displayColor": "#D7CCBB", "previewImage": null },
+          { "value": "AGT3021", "text": "AGT 3021", "displayColor": "#BBC0C4", "previewImage": null },
+          { "value": "AGT3022", "text": "AGT 3022", "displayColor": "#474843", "previewImage": null },
+          { "value": "AGT3029", "text": "AGT 3029", "displayColor": "#3B4F4E", "previewImage": null },
+          { "value": "AGT3092", "text": "AGT 3092 new", "displayColor": "#885232", "previewImage": null }
+      ]
+    },
+     "agt_one_side": {
+      "name": "AGT односторонний",
+      "defaultThickness": 18,
+      "isThicknessEditable": false,
+      "minThickness": 18,
+      "maxThickness": 18,
+      "useColorPicker": false,
+      "decors": [
+          { "value": "AGT738", "text": "AGT 738*", "displayColor": "#7E5950", "previewImage": null },
+          { "value": "AGT399", "text": "AGT 399*", "displayColor": "#838683", "previewImage": null },
+          { "value": "AGT729", "text": "AGT 729", "displayColor": "#C8CBBA", "previewImage": null },
+          { "value": "AGT736", "text": "AGT 736 *", "displayColor": "#5A98A7", "previewImage": null }
+      ]
+    },
+    "pet": {
+      "name": "B-Matt PET пластик",
+      "defaultThickness": 18,
+      "isThicknessEditable": false,
+      "minThickness": 18,
+      "maxThickness": 18,
+      "useColorPicker": false,
+      "decors": [
+          { "value": "BM01", "text": "BM01", "displayColor": "#FCFDF5", "previewImage": null },
+          { "value": "BM02", "text": "BM02", "displayColor": "#F5ECE3", "previewImage": null },
+          { "value": "BM03", "text": "BM03", "displayColor": "#A49A89", "previewImage": null },
+          { "value": "BM04", "text": "BM04", "displayColor": "#474843", "previewImage": null },
+          { "value": "BM05", "text": "BM05", "displayColor": "#838683", "previewImage": null },
+          { "value": "BM06", "text": "BM06", "displayColor": "#B5AF9F", "previewImage": null },
+          { "value": "BM07", "text": "BM07", "displayColor": "#D7CCBB", "previewImage": null },
+          { "value": "BM08", "text": "BM08", "displayColor": "#78716B", "previewImage": null },
+          { "value": "BM09", "text": "BM09", "displayColor": "#676F6C", "previewImage": null },
+          { "value": "BM10", "text": "BM10", "displayColor": "#070707", "previewImage": null },
+          { "value": "BM11", "text": "BM11", "displayColor": "#FEFEFE", "previewImage": null }
+      ]
+    },
+    "fenix": {
+      "name": "FENIX NTM пластик",
+      "defaultThickness": 19,
+      "isThicknessEditable": false,
+      "minThickness": 19,
+      "maxThickness": 19,
+      "useColorPicker": false,
+      "decors": [
+          { "value": "0029", "text": "0029 Bianco Male", "displayColor": "#FFFBF7", "previewImage": null },
+          { "value": "0717", "text": "0717 Castoro Ottawa", "displayColor": "#796E5B", "previewImage": null },
+          { "value": "0718", "text": "0718 Grigio Londra", "displayColor": "#5C5751", "previewImage": null },
+          { "value": "0719", "text": "0719 Beige Luxor", "displayColor": "#B0A288", "previewImage": null },
+          { "value": "0720", "text": "0720 Nero Ingo", "displayColor": "#181818", "previewImage": null },
+          { "value": "0724", "text": "0724 Grigio Bromo", "displayColor": "#393A3D", "previewImage": null },
+          { "value": "0725", "text": "0725 Nero Grigio Efeso", "displayColor": "#908E8f", "previewImage": null },
+          { "value": "0749", "text": "0749 Cacao Orinoco", "displayColor": "#4D4845", "previewImage": null },
+          { "value": "0750", "text": "0750 Verde Comodoro", "displayColor": "#6B7373", "previewImage": null },
+          { "value": "0751", "text": "0751 Rosso Jaipur", "displayColor": "#63423F", "previewImage": null },
+          { "value": "0754", "text": "0754 Blu Fes", "displayColor": "#40475A", "previewImage": null },
+          { "value": "2628", "text": "2628 Zinco Doha", "displayColor": "#928780", "previewImage": null }
+      ]
+    },
+     "cleaf": {
+      "name": "CLEAF",
+      "defaultThickness": 18,
+      "isThicknessEditable": true,
+      "minThickness": 18,
+      "maxThickness": 19,
+      "useColorPicker": false,
+      "decors": [
+          { "value": "ENGADINAS060", "text": "ENGADINA S060", "displayColor": "#CABEB0", "previewImage": "textures/previews/CLEAF/ENGADINA.jpg" },
+          { "value": "CONCRETAFC36", "text": "CONCRETA FC36", "displayColor": "#A8A8A8", "previewImage": "textures/previews/CLEAF/CONCRETA.jpg" },
+          { "value": "ARESFB48", "text": "ARES FB48", "displayColor": "#8C8A87", "previewImage": "textures/previews/CLEAF/ARES.jpg" },
+          { "value": "IDEAFB85", "text": "IDEA FB85*", "displayColor": "#6B635B", "previewImage": "textures/previews/CLEAF/IDEA.jpg" },
+          { "value": "MILLENNIUMU129", "text": "MILLENNIUM U129", "displayColor": "#AD957A", "previewImage": "textures/previews/CLEAF/MILLENNIUM.jpg" },
+          { "value": "YOSEMITES010", "text": "YOSEMITE S010 *", "displayColor": "#E0D7C9", "previewImage": "textures/previews/CLEAF/YOSEMITE.jpg" }
+      ]
+    },
+     "mdf_smooth": {
+      "name": "Крашеный МДФ гладкий",
+      "defaultThickness": 19,
+      "isThicknessEditable": true,
+      "minThickness": 19,
+      "maxThickness": 22,
+      "useColorPicker": true,
+      "decors": []
+    },
+    "mdf_milled": {
+      "name": "Крашеный МДФ с фрезеровкой",
+      "defaultThickness": 19,
+      "isThicknessEditable": true,
+      "minThickness": 19,
+      "maxThickness": 22,
+      "useColorPicker": true,
+      "decors": []
+    }
+  }

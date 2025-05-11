@@ -1,4 +1,30 @@
 // menus.js
+window.facadeSetsData = window.facadeSetsData || [];
+
+// --- Данные для Выпадающих Списков (Заглушка) ---
+// В будущем будем загружать из файла
+const facadeMaterialTypes = [
+    { value: 'ldsp', text: 'ЛДСП' },
+    { value: 'agt_supramat', text: 'AGT Supramat' },
+    { value: 'agt_one_side', text: 'AGT односторонний' },
+    { value: 'pet', text: 'B-Matt PET пластик' },
+    { value: 'mdf_smooth', text: 'Крашеный МДФ гладкий' },
+    { value: 'mdf_milled', text: 'Крашеный МДФ с фрезеровкой' },
+    { value: 'cleaf', text: 'CLEAF' }
+];
+
+// Заглушка для текстур - ключ: materialType.value, значение: массив опций
+const facadeTextures = {
+    'ldsp': [{ value: 'oak_natural', text: 'Дуб Натуральный' }, { value: 'walnut_dark', text: 'Орех Темный' }, /*...*/],
+    'agt_supramat': [{ value: 'agt_white', text: 'Белый супермат' }, { value: 'agt_grey', text: 'Серый супермат' }, /*...*/],
+    'agt_one_side': [{ value: 'agt_os_white', text: 'Белый одностор.' }, { value: 'agt_os_grey', text: 'Серый одностор.' }, /*...*/],
+    'pet': [{ value: 'pet_white', text: 'Белый PET' }, { value: 'pet_anthracite', text: 'Антрацит PET' }, /*...*/],
+    'cleaf': [{ value: 'cleaf_concrete', text: 'Бетон' }, { value: 'cleaf_wood', text: 'Дерево Cleaf' }, /*...*/],
+    // Для крашеного МДФ текстур нет
+    'mdf_smooth': [],
+    'mdf_milled': []
+};
+
 export function createCabinetConfigMenu(cabinetIndex, cabinets) {
     const cabinet = cabinets[cabinetIndex];
     
@@ -9,12 +35,24 @@ export function createCabinetConfigMenu(cabinetIndex, cabinets) {
         colorValue = '#d2b48c';
     }
 
+    // Получаем цвет материала шкафа
+    let materialColorValue = cabinet.initialColor; // initialColor теперь цвет материала
+    if (typeof materialColorValue === 'number') {
+        materialColorValue = `#${materialColorValue.toString(16).padStart(6, '0')}`;
+    } else if (!materialColorValue || !materialColorValue.startsWith('#')) {
+        materialColorValue = '#d2b48c'; // Fallback color
+    }
+
+    // Определяем текст кнопки детализации
+    const detailButtonText = cabinet.isDetailed ? 'Скрыть детали' : 'Показать детали';
+
     let html = `
         <h3>Настройки шкафа</h3>
         <div class="menu-content scrollable">
-            <label>Цвет фасада: <input type="color" id="cabinetFacadeColor" value="${colorValue}"></label>
+            <label>Цвет материала шкафа: <input type="color" id="cabinetMaterialColor" value="${materialColorValue}"></label>
             <div id="specificConfigFields"></div>
             <div class="menu-buttons">
+                <button id="toggleDetailBtn" onclick="toggleCabinetDetail(${cabinetIndex})">${detailButtonText}</button> 
                 <button onclick="applyCabinetConfigChanges(${cabinetIndex})">Применить</button>
                 <button onclick="hideCabinetConfigMenu()">Отмена</button>
             </div>
@@ -27,410 +65,1273 @@ export function createCabinetConfigMenu(cabinetIndex, cabinets) {
 
 export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams) {
     const cabinet = cabinets[cabinetIndex];
-    const cabinetType = document.getElementById('cabinetType').value;
-    const cabinetConfig = document.getElementById('cabinetConfig').value;
+    if (!cabinet) { console.error("updateSpecificConfigFields: Шкаф не найден", cabinetIndex); return; }
+
+    const cabinetMenu = document.getElementById('cabinetMenu');
+    const typeSelectDOM = cabinetMenu ? cabinetMenu.querySelector('#cabinetType') : null;
+    const configSelectDOM = cabinetMenu ? cabinetMenu.querySelector('#cabinetConfig') : null;
+    const cabinetType = typeSelectDOM ? typeSelectDOM.value : cabinet.cabinetType;
+    const cabinetConfig = configSelectDOM ? configSelectDOM.value : cabinet.cabinetConfig;
+
     const specificFields = document.getElementById('specificConfigFields');
+    if (!specificFields) { console.error("Element 'specificConfigFields' not found."); return; }
 
-    // Определяем, можно ли редактировать высоту
-    const isHeightEditable = cabinet.type === 'upperCabinet' || (cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge', 'highDivider'].includes(cabinetConfig));
+    // --- Расчет редактируемости и значения высоты ---
+    const isUpperCabinet = cabinet.type === 'upperCabinet'; // Флаг верхнего шкафа
+    const isHeightEditable = isUpperCabinet || (cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge', 'highDivider'].includes(cabinetConfig));
     const heightDisabledAttr = isHeightEditable ? '' : ' disabled';
-
-    // Устанавливаем значение высоты по умолчанию
-    let defaultHeight = cabinet.height * 1000; // Текущее значение шкафа в мм
-
-    // Если высота ещё не независима, устанавливаем значения из kitchenGlobalParams
-    if (!cabinet.isHeightIndependent) {
-        if (cabinet.type === 'upperCabinet') {
-            const totalHeight = kitchenGlobalParams.totalHeight / 1000; // в метрах
-            const countertopHeight = kitchenGlobalParams.countertopHeight / 1000;
-            const apronHeight = kitchenGlobalParams.apronHeight / 1000;
-            defaultHeight = Math.round((totalHeight - countertopHeight - apronHeight) * 1000);
-            cabinet.height = defaultHeight / 1000; // Обновляем значение в метрах
-        } else if (cabinet.type === 'lowerCabinet' || cabinet.type === 'freestandingCabinet') {
-            const countertopHeight = kitchenGlobalParams.countertopHeight / 1000;
-            const countertopThickness = kitchenGlobalParams.countertopThickness / 1000;
-            const plinthHeight = kitchenGlobalParams.plinthHeight / 1000;
-            defaultHeight = Math.round((countertopHeight - countertopThickness - plinthHeight) * 1000);
-            cabinet.height = defaultHeight / 1000;
-        }
-    }
-
-    // Для высоких шкафов с редактируемой высотой устанавливаем totalHeight - plinthHeight, если высота ещё не задана
-    if (isHeightEditable && (cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge', 'highDivider'].includes(cabinetConfig))) {
-        if (!cabinet.isHeightIndependent || !cabinet.height || cabinet.height === 0) {
-            const totalHeight = kitchenGlobalParams.totalHeight / 1000;
-            const plinthHeight = kitchenGlobalParams.plinthHeight / 1000;
-            defaultHeight = Math.round((totalHeight - plinthHeight) * 1000);
-            cabinet.height = defaultHeight / 1000;
-        }
-    }
-
+    let defaultHeight = cabinet.height * 1000;
+    // ... (Ваша логика расчета defaultHeight) ...
+    // --- Конец расчета высоты ---
 
     let fieldsHtml = `
-        <label>Высота шкафа, мм: <input type="number" id="cabinetHeight" value="${defaultHeight}" min="100"${heightDisabledAttr}></label>
-    `;
+        <label>Высота шкафа, мм: <input type="number" id="cabinetHeight" value="${Math.round(defaultHeight)}" min="100"${heightDisabledAttr} data-set-prop="height"></label>`; // Добавил data-set-prop
 
-    // Поля для верхнего шкафа
-    if (cabinet.type === 'upperCabinet') {
+    // --- Общие поля для ВСЕХ ВЕРХНИХ шкафов ---
+    if (isUpperCabinet) {
+        // --- Добавляем поле Отступ от стены ---
         fieldsHtml += `
-            <label>Ширина, мм: <input type="number" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" min="100"></label>
-            <label>Глубина, мм: <input type="number" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" min="100"></label>
-            <label>Отступ от пола, мм: <input type="number" id="cabinetOffsetBottom" value="${Math.round(cabinet.offsetBottom * 1000)}" min="0"></label>
-            <label>Зазор между фасадами, мм: <input type="number" id="facadeGap" value="${Math.round(cabinet.facadeGap * 1000)}" min="0"></label>
-        `;
-    } 
-    // Поля для остальных типов шкафов
-    else if (cabinetType === 'corner') {
-        if (cabinetConfig === 'sink') {
-            fieldsHtml += `
-                <label>Диаметр мойки, мм: <input type="number" id="sinkDiameter" value="${Math.round((cabinet.sinkDiameter || 0.45) * 1000)}" min="100"></label>
-                <label>Тип мойки:
-                    <select id="sinkType">
-                        <option value="round" ${cabinet.sinkType === 'round' ? 'selected' : ''}>Круглая</option>
-                        <option value="square" ${cabinet.sinkType === 'square' ? 'selected' : ''}>Квадратная</option>
-                    </select>
-                </label>
-            `;
-        } else if (cabinetConfig === 'cornerStorage') {
-            fieldsHtml += `
-                <label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0"></label>
-            `;
+        <label>Отступ от стены, мм: <input type="number" id="wallOffset" value="${Math.round((cabinet.wallOffset || 0.02) * 1000)}" min="0" data-set-prop="wallOffset"></label>`;
+        fieldsHtml += `
+            <label>Ширина, мм: <input type="number" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" min="10" data-set-prop="width"></label>
+            <label>Глубина, мм: <input type="number" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" min="100" data-set-prop="depth"></label>
+            <label>Отступ от пола, мм: <input type="number" id="cabinetOffsetBottom" value="${Math.round(cabinet.offsetBottom * 1000)}" min="0" data-set-prop="offsetBottom"></label>
+            <label>Зазор между фасадами, мм: <input type="number" id="facadeGap" value="${Math.round((cabinet.facadeGap || 0.003))}" min="0" data-set-prop="facadeGap"></label>`;// Добавляем выбор фасада и текстуры для НЕ ОТКРЫТЫХ верхних
+        if (cabinetConfig !== 'openUpper') {
+             fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+             fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
         }
-    } else if (cabinetType === 'straight') {
+        // Добавляем специфичные поля для верхних конфигураций
         switch (cabinetConfig) {
-            case 'swing':
-                fieldsHtml += `
-                    <label>Дверь:
-                        <select id="doorType">
-                            <option value="none" ${cabinet.doorType === 'none' ? 'selected' : ''}>Без двери</option>
-                            <option value="left" ${cabinet.doorType === 'left' ? 'selected' : ''}>Левая</option>
-                            <option value="right" ${cabinet.doorType === 'right' ? 'selected' : ''}>Правая</option>
-                            <option value="double" ${cabinet.doorType === 'double' ? 'selected' : ''}>Двойная</option>
-                        </select>
-                    </label>
-                    <label>Полка:
-                        <select id="shelfType">
-                            <option value="none" ${cabinet.shelfType === 'none' ? 'selected' : ''}>Без полок</option>
-                            <option value="confirmat" ${cabinet.shelfType === 'confirmat' ? 'selected' : ''}>Конфирмат</option>
-                            <option value="shelfHolder" ${cabinet.shelfType === 'shelfHolder' ? 'selected' : ''}>Полкодержатель</option>
-                            <option value="secura_7" ${cabinet.shelfType === 'secura_7' ? 'selected' : ''}>Secura _7</option>
-                        </select>
-                    </label>
-                    <label>Количество полок, шт: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 0}" min="0"></label>
-                    <label>Задняя царга:
-                        <select id="rearStretcher">
-                            <option value="horizontal" ${cabinet.rearStretcher === 'horizontal' ? 'selected' : ''}>Горизонтальная</option>
-                            <option value="vertical" ${cabinet.rearStretcher === 'vertical' ? 'selected' : ''}>Вертикальная</option>
-                            <option value="none" ${cabinet.rearStretcher === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Передняя царга:
-                        <select id="frontStretcher">
-                            <option value="horizontal" ${cabinet.frontStretcher === 'horizontal' ? 'selected' : ''}>Горизонтальная</option>
-                            <option value="vertical" ${cabinet.frontStretcher === 'vertical' ? 'selected' : ''}>Вертикальная</option>
-                            <option value="none" ${cabinet.frontStretcher === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Опуск царг от верха, мм: <input type="number" id="stretcherDrop" value="${Math.round((cabinet.stretcherDrop || 0) * 1000)}" min="0"></label>
-                    <label>Задняя панель:
-                        <select id="rearPanel">
-                            <option value="yes" ${cabinet.rearPanel === 'yes' ? 'selected' : ''}>Да</option>
-                            <option value="no" ${cabinet.rearPanel === 'no' ? 'selected' : ''}>Нет</option>
-                            <option value="halfTop" ${cabinet.rearPanel === 'halfTop' ? 'selected' : ''}>До половины сверху</option>
-                        </select>
-                    </label>
-                    <label>Фальш-панели:
-                        <select id="falsePanels">
-                            <option value="leftFlat" ${cabinet.falsePanels === 'leftFlat' ? 'selected' : ''}>Левая плоская</option>
-                            <option value="leftWide" ${cabinet.falsePanels === 'leftWide' ? 'selected' : ''}>Левая широкая</option>
-                            <option value="rightFlat" ${cabinet.falsePanels === 'rightFlat' ? 'selected' : ''}>Правая плоская</option>
-                            <option value="rightWide" ${cabinet.falsePanels === 'rightWide' ? 'selected' : ''}>Правая широкая</option>
-                            <option value="none" ${cabinet.falsePanels === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Фасады:
-                        <select id="facadeSet">
-                            <option value="set1" ${cabinet.facadeSet === 'set1' ? 'selected' : ''}>Набор 1</option>
-                            <option value="set2" ${cabinet.facadeSet === 'set2' ? 'selected' : ''}>Набор 2</option>
-                            <option value="set3" ${cabinet.facadeSet === 'set3' ? 'selected' : ''}>Набор 3</option>
-                        </select>
-                    </label>
-                `;
+            case 'swingUpper':
+                 fieldsHtml += `<label>Дверь: <select id="doorType">...</select></label>`;
+                 fieldsHtml += `<label>Полка: <select id="shelfType">...</select></label>`;
+                 fieldsHtml += `<label>Количество полок, шт: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 0}" min="0" data-set-prop="shelfCount"></label>`;
+                // Царги и ЗС здесь не нужны
                 break;
-            case 'drawers':
-                fieldsHtml += `
-                    <label>Количество фасадов:
-                        <select id="facadeCount">
-                            <option value="1" ${cabinet.facadeCount === '1' ? 'selected' : ''}>1</option>
-                            <option value="2" ${cabinet.facadeCount === '2' ? 'selected' : ''}>2</option>
-                            <option value="3" ${cabinet.facadeCount === '3' ? 'selected' : ''}>3</option>
-                            <option value="4" ${cabinet.facadeCount === '4' ? 'selected' : ''}>4</option>
-                        </select>
-                    </label>
-                    <label>Набор ящиков:
-                        <select id="drawerSet">
-                            <option value="D" ${cabinet.drawerSet === 'D' ? 'selected' : ''}>D</option>
-                            <option value="D+D" ${cabinet.drawerSet === 'D+D' ? 'selected' : ''}>D+D</option>
-                            <option value="D+C+M" ${cabinet.drawerSet === 'D+C+M' ? 'selected' : ''}>D+C+M</option>
-                            <option value="D+M+M" ${cabinet.drawerSet === 'D+M+M' ? 'selected' : ''}>D+M+M</option>
-                            <option value="D+M" ${cabinet.drawerSet === 'D+M' ? 'selected' : ''}>D+M</option>
-                            <option value="D+C" ${cabinet.drawerSet === 'D+C' ? 'selected' : ''}>D+C</option>
-                            <option value="C+C+M" ${cabinet.drawerSet === 'C+C+M' ? 'selected' : ''}>C+C+M</option>
-                            <option value="M+M+M+M" ${cabinet.drawerSet === 'M+M+M+M' ? 'selected' : ''}>M+M+M+M</option>
-                            <option value="cargoBlum" ${cabinet.drawerSet === 'cargoBlum' ? 'selected' : ''}>Карго BLUM</option>
-                            <option value="cargoMesh" ${cabinet.drawerSet === 'cargoMesh' ? 'selected' : ''}>Карго сетчатое</option>
-                        </select>
-                    </label>
-                    <label>Задняя царга:
-                        <select id="rearStretcher">
-                            <option value="horizontal" ${cabinet.rearStretcher === 'horizontal' ? 'selected' : ''}>Горизонтальная</option>
-                            <option value="vertical" ${cabinet.rearStretcher === 'vertical' ? 'selected' : ''}>Вертикальная</option>
-                            <option value="none" ${cabinet.rearStretcher === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Передняя царга:
-                        <select id="frontStretcher">
-                            <option value="horizontal" ${cabinet.frontStretcher === 'horizontal' ? 'selected' : ''}>Горизонтальная</option>
-                            <option value="vertical" ${cabinet.frontStretcher === 'vertical' ? 'selected' : ''}>Вертикальная</option>
-                            <option value="none" ${cabinet.frontStretcher === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Опуск царг от верха, мм: <input type="number" id="stretcherDrop" value="${Math.round((cabinet.stretcherDrop || 0) * 1000)}" min="0"></label>
-                    <label>Задняя панель:
-                        <select id="rearPanel">
-                            <option value="yes" ${cabinet.rearPanel === 'yes' ? 'selected' : ''}>Да</option>
-                            <option value="no" ${cabinet.rearPanel === 'no' ? 'selected' : ''}>Нет</option>
-                            <option value="halfTop" ${cabinet.rearPanel === 'halfTop' ? 'selected' : ''}>До половины сверху</option>
-                        </select>
-                    </label>
-                    <label>Фальш-панели:
-                        <select id="falsePanels">
-                            <option value="leftFlat" ${cabinet.falsePanels === 'leftFlat' ? 'selected' : ''}>Левая плоская</option>
-                            <option value="leftWide" ${cabinet.falsePanels === 'leftWide' ? 'selected' : ''}>Левая широкая</option>
-                            <option value="rightFlat" ${cabinet.falsePanels === 'rightFlat' ? 'selected' : ''}>Правая плоская</option>
-                            <option value="rightWide" ${cabinet.falsePanels === 'rightWide' ? 'selected' : ''}>Правая широкая</option>
-                            <option value="none" ${cabinet.falsePanels === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Фасады:
-                        <select id="facadeSet">
-                            <option value="set1" ${cabinet.facadeSet === 'set1' ? 'selected' : ''}>Набор 1</option>
-                            <option value="set2" ${cabinet.facadeSet === 'set2' ? 'selected' : ''}>Набор 2</option>
-                            <option value="set3" ${cabinet.facadeSet === 'set3' ? 'selected' : ''}>Набор 3</option>
-                        </select>
-                    </label>
-                `;
-                break;
-            case 'oven':
-                fieldsHtml += `
-                    <label>Высота духовки:
-                        <select id="ovenHeight">
-                            <option value="600" ${cabinet.ovenHeight === '600' ? 'selected' : ''}>600 мм</option>
-                            <option value="450" ${cabinet.ovenHeight === '450' ? 'selected' : ''}>450 мм</option>
-                        </select>
-                    </label>
-                    <label>Расположение духовки:
-                        <select id="ovenPosition">
-                            <option value="top" ${cabinet.ovenPosition === 'top' ? 'selected' : ''}>Верхнее</option>
-                            <option value="bottom" ${cabinet.ovenPosition === 'bottom' ? 'selected' : ''}>Нижнее</option>
-                        </select>
-                    </label>
-                    <label>Доп. отступ от столешницы, мм: <input type="number" id="extraOffset" value="${Math.round((cabinet.extraOffset || 0) * 1000)}" min="0"></label>
-                `;
-                break;
-            case 'tallStorage':
-                fieldsHtml += `
-                    <label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 4}" min="0"></label>
-                `;
-                break;
-            case 'tallOvenMicro':
-                fieldsHtml += `
-                    <label>Тип духовки:
-                        <select id="ovenType">
-                            <option value="600" ${cabinet.ovenType === '600' ? 'selected' : ''}>600 мм</option>
-                            <option value="450" ${cabinet.ovenType === '450' ? 'selected' : ''}>450 мм</option>
-                            <option value="none" ${cabinet.ovenType === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Уровень размещения духовки:
-                        <select id="ovenLevel">
-                            <option value="drawer" ${cabinet.ovenLevel === 'drawer' ? 'selected' : ''}>Уровень первого выдвижного ящика</option>
-                            <option value="countertop" ${cabinet.ovenLevel === 'countertop' ? 'selected' : ''}>Уровень столешницы</option>
-                        </select>
-                    </label>
-                    <label>Тип СВЧ:
-                        <select id="microwaveType">
-                            <option value="362" ${cabinet.microwaveType === '362' ? 'selected' : ''}>Встроенная 362 мм</option>
-                            <option value="380" ${cabinet.microwaveType === '380' ? 'selected' : ''}>Встроенная 380 мм</option>
-                            <option value="none" ${cabinet.microwaveType === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Заполнение пространства под духовкой:
-                        <select id="underOvenFill">
-                            <option value="drawers" ${cabinet.underOvenFill === 'drawers' ? 'selected' : ''}>Выдвижные ящики</option>
-                            <option value="swing" ${cabinet.underOvenFill === 'swing' ? 'selected' : ''}>Распашная дверь</option>
-                        </select>
-                    </label>
-                    <label>Полки в верхней части шкафа:
-                        <select id="topShelves">
-                            <option value="none" ${cabinet.topShelves === 'none' ? 'selected' : ''}>Нет</option>
-                            <option value="1" ${cabinet.topShelves === '1' ? 'selected' : ''}>1</option>
-                            <option value="2" ${cabinet.topShelves === '2' ? 'selected' : ''}>2</option>
-                            <option value="3" ${cabinet.topShelves === '3' ? 'selected' : ''}>3</option>
-                        </select>
-                    </label>
-                    <label>Фасады:
-                        <select id="facadeSet">
-                            <option value="set1" ${cabinet.facadeSet === 'set1' ? 'selected' : ''}>Набор 1</option>
-                            <option value="set2" ${cabinet.facadeSet === 'set2' ? 'selected' : ''}>Набор 2</option>
-                            <option value="set3" ${cabinet.facadeSet === 'set3' ? 'selected' : ''}>Набор 3</option>
-                        </select>
-                    </label>
-                `;
-                break;
-            case 'fridge':
-                fieldsHtml += `
-                    <label>Тип холодильника:
-                        <select id="fridgeType">
-                            <option value="single" ${cabinet.fridgeType === 'single' ? 'selected' : ''}>Однокамерный</option>
-                            <option value="double" ${cabinet.fridgeType === 'double' ? 'selected' : ''}>Двухкамерный</option>
-                        </select>
-                    </label>
-                    <label>Количество полок над холодильником:
-                        <select id="shelvesAbove">
-                            <option value="none" ${cabinet.shelvesAbove === 'none' ? 'selected' : ''}>Нет</option>
-                            <option value="1" ${cabinet.shelvesAbove === '1' ? 'selected' : ''}>1</option>
-                            <option value="2" ${cabinet.shelvesAbove === '2' ? 'selected' : ''}>2</option>
-                        </select>
-                    </label>
-                    <label>Видимая сторона:
-                        <select id="visibleSide">
-                            <option value="left" ${cabinet.visibleSide === 'left' ? 'selected' : ''}>Левая</option>
-                            <option value="right" ${cabinet.visibleSide === 'right' ? 'selected' : ''}>Правая</option>
-                            <option value="both" ${cabinet.visibleSide === 'both' ? 'selected' : ''}>Обе</option>
-                            <option value="none" ${cabinet.visibleSide === 'none' ? 'selected' : ''}>Нет</option>
-                        </select>
-                    </label>
-                    <label>Открывание двери:
-                        <select id="doorOpening">
-                            <option value="left" ${cabinet.doorOpening === 'left' ? 'selected' : ''}>Левое</option>
-                            <option value="right" ${cabinet.doorOpening === 'right' ? 'selected' : ''}>Правое</option>
-                        </select>
-                    </label>
-                    <label>Вертикальный гола профиль:
-                        <select id="verticalProfile">
-                            <option value="none" ${cabinet.verticalProfile === 'none' ? 'selected' : ''}>Нет</option>
-                            <option value="double" ${cabinet.verticalProfile === 'double' ? 'selected' : ''}>Да, двухсторонний</option>
-                            <option value="singleWithPanel" ${cabinet.verticalProfile === 'singleWithPanel' ? 'selected' : ''}>Да, односторонний с боковой панелью</option>
-                        </select>
-                    </label>
-                    <label>Фасады:
-                        <select id="facadeSet">
-                            <option value="set1" ${cabinet.facadeSet === 'set1' ? 'selected' : ''}>Набор 1</option>
-                            <option value="set2" ${cabinet.facadeSet === 'set2' ? 'selected' : ''}>Набор 2</option>
-                            <option value="set3" ${cabinet.facadeSet === 'set3' ? 'selected' : ''}>Набор 3</option>
-                        </select>
-                    </label>
-                `;
-                break;
-                case 'dishwasher':
-                fieldsHtml += `
-                    <label>Ширина посудомойки: 
-                        <select id="dishwasherWidth">
-                            <option value="450" ${cabinet.dishwasherWidth === '450' ? 'selected' : ''}>450</option>
-                            <option value="600" ${cabinet.dishwasherWidth === '600' ? 'selected' : ''}>600</option>
-                        </select>
-                    </label>
-                `;
-                break;
-                case 'highDivider':
-                fieldsHtml += ` 
-                        <label>Глубина стойки: <input type="number" id="highDividerDepth" value="${cabinet.highDividerDepth || 560}" min="0"></label>
-                `;
-                break;
+            case 'liftUpper':
+                 fieldsHtml += `  `;
+                 break;
+            case 'openUpper':
+                  fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
+                 break;
+             case 'cornerUpperStorage':
+                  fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
+                  break;
+            // Добавить другие верхние конфигурации по мере необходимости
         }
-    }
 
+    // --- Поля для НИЖНИХ и FREESTANDING шкафов ---
+    } else { // Если не верхний шкаф
+        if (cabinetType === 'corner') {
+            // --- Угловые Нижние ---
+            if (cabinetConfig === 'sink') {
+                fieldsHtml += `
+                    <label>Диаметр мойки, мм: <input type="number" id="sinkDiameter" value="${Math.round((cabinet.sinkDiameter || 0.45) * 1000)}" min="100" data-set-prop="sinkDiameter"></label>
+                    <label>Тип мойки: <select id="sinkType">...</select></label>
+                `;
+            } else if (cabinetConfig === 'cornerStorage') {
+                fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
+            }
+            // Добавляем фасад/текстуру для угловых нижних
+            fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+            fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+
+        } else if (cabinetType === 'straight') {
+            // --- Прямые Нижние или Freestanding ---
+            switch (cabinetConfig) {
+                case 'swing':
+                    fieldsHtml += `
+                        <label>Дверь: <select id="doorType">...</select></label>
+                        <label>Полка: <select id="shelfType">...</select></label>
+                        <label>Количество полок, шт: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 0}" min="0" data-set-prop="shelfCount"></label>
+                        <label>Задняя царга: <select id="rearStretcher">...</select></label>
+                        <label>Передняя царга: <select id="frontStretcher">...</select></label>
+                        <label>Опуск царг от верха, мм: <input type="number" id="stretcherDrop" value="${Math.round((cabinet.stretcherDrop || 0) * 1000)}" min="0" data-set-prop="stretcherDrop"></label>
+                        <label>Задняя панель: <select id="rearPanel">...</select></label>   
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'drawers':
+                    fieldsHtml += `
+                        <label>Количество фасадов: <select id="facadeCount">...</select></label>
+                        <label>Набор ящиков: <select id="drawerSet">...</select></label>
+                         <label>Задняя царга: <select id="rearStretcher">...</select></label>
+                         <label>Передняя царга: <select id="frontStretcher">...</select></label>
+                         <label>Опуск царг от верха, мм: <input type="number" id="stretcherDrop" value="${Math.round((cabinet.stretcherDrop || 0) * 1000)}" min="0" data-set-prop="stretcherDrop"></label>
+                         <label>Задняя панель: <select id="rearPanel">...</select></label>  
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'oven':
+                    fieldsHtml += `
+                        <label>Высота духовки: <select id="ovenHeight">...</select></label>
+                        <label>Расположение духовки: <select id="ovenPosition">...</select></label>
+                        <label>Доп. отступ от столешницы, мм: <input type="number" id="extraOffset" value="${Math.round((cabinet.extraOffset || 0) * 1000)}" min="0" data-set-prop="extraOffset"></label>
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'tallStorage':
+                    fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 4}" min="0" data-set-prop="shelfCount"></label>`;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'tallOvenMicro':
+                    fieldsHtml += `
+                        <label>Тип духовки: <select id="ovenType">...</select></label>
+                        <label>Уровень духовки: <select id="ovenLevel">...</select></label>
+                        <label>Тип СВЧ: <select id="microwaveType">...</select></label>
+                        <label>Заполнение под духовкой: <select id="underOvenFill">...</select></label>
+                        <label>Полки сверху: <select id="topShelves">...</select></label>
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'fridge':
+                    fieldsHtml += `
+                        <label>Тип холодильника: <select id="fridgeType">...</select></label>
+                        <label>Полки над: <select id="shelvesAbove">...</select></label>
+                        <label>Видимая сторона: <select id="visibleSide">...</select></label>
+                        <label>Открывание: <select id="doorOpening">...</select></label>
+                        <label>Вертикальный профиль: <select id="verticalProfile">...</select></label>
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'dishwasher':
+                    fieldsHtml += `<label>Ширина ПММ: <select id="dishwasherWidth">...</select></label>`;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+                case 'falsePanel':
+                    console.log("[updateSpecificConfigFields] Генерация полей для 'falsePanel'. Данные шкафа:", JSON.parse(JSON.stringify(cabinet)));
+
+                    // --- ПОЛУЧАЕМ ЗНАЧЕНИЯ ДЛЯ ОТОБРАЖЕНИЯ В ММ ---
+                    const fpType = cabinet.fp_type || 'narrow';
+                    const fpHeightOption = cabinet.fp_height_option || 'cabinetHeight';
+                    const fpVerticalAlign = cabinet.fp_vertical_align || 'cabinetBottom';
+
+                    // Высота шкафа (уже в метрах в cabinet.height)
+                    const cabinetHeightMm = Math.round(cabinet.height * 1000);
+
+                    // Свободная высота: если есть в данных (в метрах), конвертируем, иначе берем высоту шкафа в мм
+                    const fpCustomHeightMm = cabinet.fp_custom_height !== undefined
+                        ? Math.round(cabinet.fp_custom_height * 1000)
+                        : cabinetHeightMm;
+
+                    // Расстояние от пола: если есть в данных (в метрах), конвертируем, иначе 0 мм
+                    const fpOffsetFromFloorMm = cabinet.fp_offset_from_floor !== undefined
+                        ? Math.round(cabinet.fp_offset_from_floor * 1000)
+                        : 0;
+
+                    // Глубина панели: если есть в данных (в метрах), конвертируем, иначе 80 мм
+                    const fpDepthMm = cabinet.fp_depth !== undefined
+                        ? Math.round(cabinet.fp_depth * 1000)
+                        : 80; // 80 мм по умолчанию
+                    // -------------------------------------------------
+
+                    const customHeightDisabled = fpHeightOption !== 'freeHeight' ? 'disabled' : '';
+                    const offsetFromFloorDisabled = fpVerticalAlign !== 'floor' ? 'disabled' : '';
+                    const depthInputDisabled = !(fpType === 'narrow' || fpType === 'decorativePanel') ? 'disabled' : '';
+
+                    fieldsHtml += `
+                        <p style="text-align: center; color: #555; margin-top:10px; font-weight:bold;">-- Настройки Фальш-панели --</p>
+
+                        <label>Тип фальш-панели:
+                            <select id="fp_type" data-set-prop="fp_type">
+                                <option value="narrow" ${fpType === 'narrow' ? 'selected' : ''}>Узкая</option>
+                                <option value="wideLeft" ${fpType === 'wideLeft' ? 'selected' : ''}>Широкая (слева от шкафа)</option>
+                                <option value="wideRight" ${fpType === 'wideRight' ? 'selected' : ''}>Широкая (справа от шкафа)</option>
+                                <option value="decorativePanel" ${fpType === 'decorativePanel' ? 'selected' : ''}>Декоративная панель</option>
+                            </select>
+                        </label>
+
+                        <label>Высота фальш-панели:
+                            <select id="fp_height_option" data-set-prop="fp_height_option">
+                                <option value="cabinetHeight" ${fpHeightOption === 'cabinetHeight' ? 'selected' : ''}>По высоте шкафа</option>
+                                <option value="toGola" ${fpHeightOption === 'toGola' ? 'selected' : ''}>До Гола-профиля</option>
+                                <option value="kitchenHeight" ${fpHeightOption === 'kitchenHeight' ? 'selected' : ''}>По высоте кухни (до потолка)</option>
+                                <option value="freeHeight" ${fpHeightOption === 'freeHeight' ? 'selected' : ''}>Свободная высота</option>
+                            </select>
+                        </label>
+
+                        <label>Свободная высота, мм:
+                            <input type="number" id="fp_custom_height" value="${fpCustomHeightMm}" min="50" data-set-prop="fp_custom_height" ${customHeightDisabled}>
+                        </label>
+
+                        <label>Расположение по высоте:
+                            <select id="fp_vertical_align" data-set-prop="fp_vertical_align">
+                                <option value="cabinetBottom" ${fpVerticalAlign === 'cabinetBottom' ? 'selected' : ''}>От низа шкафов</option>
+                                <option value="floor" ${fpVerticalAlign === 'floor' ? 'selected' : ''}>От пола</option>
+                            </select>
+                        </label>
+
+                        <label>Расстояние от пола, мм:
+                            <input type="number" id="fp_offset_from_floor" value="${fpOffsetFromFloorMm}" min="0" data-set-prop="fp_offset_from_floor" ${offsetFromFloorDisabled}>
+                        </label>
+
+                        <label>Глубина панели, мм (для узкой/декор.):
+                            <input type="number" id="fp_depth" value="${fpDepthMm}" min="10" data-set-prop="fp_depth" ${depthInputDisabled}>
+                        </label>
+                    `;
+                    fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+
+                    // Слушатели для обновления disabled состояния полей и сброса значений
+                    setTimeout(() => {
+                        const fpTypeSelect = document.getElementById('fp_type');
+                        const fpHeightOptionSelect = document.getElementById('fp_height_option');
+                        const fpVerticalAlignSelect = document.getElementById('fp_vertical_align');
+                        const fpCustomHeightInput = document.getElementById('fp_custom_height');
+                        const fpOffsetFromFloorInput = document.getElementById('fp_offset_from_floor');
+                        const fpDepthInput = document.getElementById('fp_depth');
+                        const fpWideWidthInput = document.getElementById('fp_wide_width');
+
+                        // Сохраняем ссылку на сам объект шкафа из массива, чтобы обновлять его
+                        const targetCabinetForListeners = window.cabinets[cabinetIndex];
+
+                        // Слушатели для fpHeightOptionSelect и fpVerticalAlignSelect (как раньше, управляют disabled)
+                        if (fpHeightOptionSelect && fpCustomHeightInput) {
+                            const updateCustomHeightState = () => {
+                                 const isFreeHeight = fpHeightOptionSelect.value === 'freeHeight';
+                                 fpCustomHeightInput.disabled = !isFreeHeight;
+                                 if (!isFreeHeight && targetCabinetForListeners) {
+                                     fpCustomHeightInput.value = Math.round(targetCabinetForListeners.height * 1000);
+                                 } else if (isFreeHeight && fpCustomHeightInput.value === '' && targetCabinetForListeners){
+                                      fpCustomHeightInput.value = Math.round(targetCabinetForListeners.height * 1000);
+                                 }
+                            };
+                            updateCustomHeightState();
+                            fpHeightOptionSelect.addEventListener('change', updateCustomHeightState);
+                        }
+                        if (fpVerticalAlignSelect && fpOffsetFromFloorInput) {
+                            const updateOffsetFloorState = () => {
+                                const isFromFloor = fpVerticalAlignSelect.value === 'floor';
+                                fpOffsetFromFloorInput.disabled = !isFromFloor;
+                                if (!isFromFloor) {
+                                    fpOffsetFromFloorInput.value = 0;
+                                } else if (isFromFloor && fpOffsetFromFloorInput.value === '' && targetCabinetForListeners){
+                                     fpOffsetFromFloorInput.value = targetCabinetForListeners.fp_offset_from_floor ? Math.round(targetCabinetForListeners.fp_offset_from_floor * 1000) : 0;
+                                }
+                            };
+                            updateOffsetFloorState();
+                            fpVerticalAlignSelect.addEventListener('change', updateOffsetFloorState);
+                       }
+                         // --- Слушатель для ИЗМЕНЕНИЯ ТИПА ФАЛЬШ-ПАНЕЛИ ---
+                         if (fpTypeSelect && fpDepthInput && targetCabinetForListeners) {
+                            const updateFieldsOnFPTypeChange = () => {
+                                if (!targetCabinetForListeners) return;
+                                const currentFpType = fpTypeSelect.value;
+                                let newDepthValueMmToShow = 80; // Дефолт для узкой
+                                let depthInputActive = true;
+                                let wideWidthInputActive = false;
+
+                                console.log(`[FP Menu Listener] Тип ФП изменен на: ${currentFpType}`);
+
+                                if (currentFpType === 'narrow') {
+                                    newDepthValueMmToShow = 80; // Ориентир для узкой
+                                    depthInputActive = true;
+                                    wideWidthInputActive = false;
+                                } else if (currentFpType === 'decorativePanel') {
+                                    newDepthValueMmToShow = 582; // Фиксированный ориентир
+                                    depthInputActive = true;
+                                    wideWidthInputActive = false;
+                                    console.log(` - Авто-глубина для 'decorativePanel' (ориентир): ${newDepthValueMmToShow} мм`);
+                                } else { // wideLeft, wideRight
+                                    // Для широких глубина панели = глубина "шкафа-контейнера"
+                                    // Это значение берется из cabinet.depth, которое пользователь мог установить в основном меню
+                                    // или оно было установлено по умолчанию
+                                    newDepthValueMmToShow = Math.round(targetCabinetForListeners.depth * 1000);
+                                    depthInputActive = true; // Поле глубины ТЕПЕРЬ активно и для широких
+                                    wideWidthInputActive = true;
+                                }
+
+                                fpDepthInput.value = newDepthValueMmToShow;
+                                fpDepthInput.disabled = !depthInputActive; // Поле глубины теперь почти всегда активно
+
+                                if (fpWideWidthInput) {
+                                     fpWideWidthInput.disabled = !wideWidthInputActive;
+                                     if (wideWidthInputActive) {
+                                         fpWideWidthInput.value = targetCabinetForListeners.fp_wide_width !== undefined
+                                             ? Math.round(targetCabinetForListeners.fp_wide_width * 1000)
+                                             : 100;
+                                     }
+                                }
+                            };
+                            // ... (привязка слушателя и первичный вызов updateFieldsOnFPTypeChange) ...
+                            fpTypeSelect.removeEventListener('change', fpTypeSelect._updateFpFieldsListener);
+                            fpTypeSelect._updateFpFieldsListener = updateFieldsOnFPTypeChange;
+                            fpTypeSelect.addEventListener('change', updateFieldsOnFPTypeChange);
+                            updateFieldsOnFPTypeChange();
+                        }
+                    }, 0);
+                    break;
+                default:
+                    console.log(`Неизвестная конфиг. "${cabinetConfig}" для типа "${cabinetType}"`);
+                    // Можно добавить фасад/текстуру по умолчанию?
+                    // fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+                    // fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+                    break;
+            }
+        } else {
+             console.log(`Неизвестный тип шкафа "${cabinetType}"`);
+             // Можно добавить фасад/текстуру по умолчанию?
+             // fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+             // fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+        }
+    } // Конец if (!isUpperCabinet)
+
+    // Заполняем контейнер
     specificFields.innerHTML = fieldsHtml;
+
+    // Заполняем опции для select'ов
+    populateSelectOptions(cabinet); // Эта функция заполнит все '...'
 }
 
-export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGlobalParams) { // Добавлены параметры x, y
-    //console.log('showCabinetConfigMenu called with x:', x, 'y:', y); // Отладочный вывод
+// --- НОВАЯ Вспомогательная функция для генерации <select> Набора Фасадов ---
+function generateFacadeSetSelectHTML(cabinet) {
+    let selectHTML = `<label>Фасады: <select id="facadeSet" data-set-prop="facadeSet">`;
+    let currentSetValid = false; // Флаг валидности текущего выбора шкафа
+
+    if (window.facadeSetsData && window.facadeSetsData.length > 0) {
+        window.facadeSetsData.forEach((set) => {
+            const isSelected = set.id === cabinet.facadeSet;
+            if (isSelected) currentSetValid = true;
+            selectHTML += `<option value="${set.id}" ${isSelected ? 'selected' : ''}>${set.name || `Набор (ID: ${set.id.substring(0,4)}...)`}</option>`;
+        });
+
+        // Если у шкафа невалидный или отсутствующий ID набора, выбираем первый
+        if (!currentSetValid) {
+             const firstSetId = window.facadeSetsData[0].id;
+             console.warn(`Невалидный facadeSet (${cabinet.facadeSet}) для шкафа ${cabinet.mesh?.uuid}. Установлен первый: ${firstSetId}`);
+             cabinet.facadeSet = firstSetId; // Обновляем данные шкафа (важно!)
+             // Генерируем опции заново с выбранным первым
+             selectHTML = `<label>Фасады: <select id="facadeSet" data-set-prop="facadeSet">`;
+             window.facadeSetsData.forEach((set, index) => {
+                  selectHTML += `<option value="${set.id}" ${index === 0 ? 'selected' : ''}>${set.name || `Набор ${index + 1}`}</option>`;
+             });
+        }
+    } else {
+        selectHTML += `<option value="" selected disabled>-- создайте набор фасадов --</option>`;
+    }
+    selectHTML += `</select></label>`;
+    return selectHTML;
+}
+
+// --- НОВАЯ Вспомогательная функция для генерации <select> Направления Текстуры ---
+function generateTextureDirectionSelectHTML(cabinet) {
+    // Получаем текущее значение, по умолчанию 'vertical'
+    const currentDirection = cabinet.textureDirection || 'vertical';
+
+    let selectHTML = `<label>Направление текстуры:
+        <select id="textureDirection" data-set-prop="textureDirection">
+            <option value="vertical" ${currentDirection === 'vertical' ? 'selected' : ''}>Вертикально</option>
+            <option value="horizontal" ${currentDirection === 'horizontal' ? 'selected' : ''}>Горизонтально</option>
+        </select>
+    </label>`;
+    return selectHTML;
+}
+
+// --- НОВАЯ Вспомогательная функция для заполнения опций других select ---
+function populateSelectOptions(cabinet) {
+    // Заполняем опции для существующих select'ов (которые имели '...')
+    const optionsMap = {
+        'doorType': [
+            { value: "none", text: "Без двери" }, { value: "left", text: "Левая" },
+            { value: "right", text: "Правая" }, { value: "double", text: "Двойная" }
+        ],
+        'shelfType': [
+             { value: "none", text: "Без полок" }, { value: "confirmat", text: "Конфирмат" },
+             { value: "shelfHolder", text: "Полкодержатель" }, { value: "secura_7", text: "Secura _7" }
+        ],
+        'rearStretcher': [
+             { value: "horizontal", text: "Горизонтальная" }, { value: "vertical", text: "Вертикальная" },
+             { value: "none", text: "Нет" }
+        ],
+        'frontStretcher': [
+              { value: "horizontal", text: "Горизонтальная" }, { value: "vertical", text: "Вертикальная" },
+              { value: "none", text: "Нет" }
+        ],
+         'rearPanel': [
+              { value: "yes", text: "Да" }, { value: "no", text: "Нет" },
+              { value: "halfTop", text: "До половины сверху" }, { value: "halfBottom", text: "До половины снизу" }
+         ],
+          'facadeCount': [ { value: "1", text: "1" }, { value: "2", text: "2" }, { value: "3", text: "3" }, { value: "4", text: "4" } ],
+          'drawerSet': [ // <-- Добавляем полный список для ящиков
+            { value: "D", text: "D" }, { value: "D+D", text: "D+D" },
+            { value: "D+C+M", text: "D+C+M" }, { value: "D+M+M", text: "D+M+M" },
+            { value: "D+M", text: "D+M" }, { value: "D+C", text: "D+C" },
+            { value: "C+C+M", text: "C+C+M" }, { value: "M+M+M+M", text: "M+M+M+M" },
+            { value: "cargoBlum", text: "Карго BLUM" }, { value: "cargoMesh", text: "Карго сетчатое" }
+        ],
+          'ovenHeight': [ { value: "600", text: "600 мм" }, { value: "450", text: "450 мм" } ],
+          'ovenPosition': [ { value: "top", text: "Верхнее" }, { value: "bottom", text: "Нижнее" } ],
+           // ... добавьте опции для ВСЕХ остальных select'ов ...
+           'sinkType': [ { value: "round", text: "Круглая" }, { value: "square", text: "Квадратная" } ],
+            'ovenType': [ { value: "600", text: "600 мм" }, { value: "450", text: "450 мм" }, { value: "none", text: "Нет" } ],
+            'ovenLevel': [ { value: "drawer", text: "Уровень первого ящика" }, { value: "countertop", text: "Уровень столешницы" } ],
+            'microwaveType': [ { value: "362", text: "Встр. 362 мм" }, { value: "380", text: "Встр. 380 мм" }, { value: "none", text: "Нет" } ],
+            'underOvenFill': [ { value: "drawers", text: "Выдвижные ящики" }, { value: "swing", text: "Распашная дверь" } ],
+            'topShelves': [ { value: "none", text: "Нет" }, { value: "1", text: "1" }, { value: "2", text: "2" }, { value: "3", text: "3" } ],
+            'fridgeType': [ { value: "single", text: "Однокамерный" }, { value: "double", text: "Двухкамерный" } ],
+            'shelvesAbove': [ { value: "none", text: "Нет" }, { value: "1", text: "1" }, { value: "2", text: "2" } ],
+            'visibleSide': [ { value: "none", text: "Нет" }, { value: "left", text: "Левая" }, { value: "right", text: "Правая" }, { value: "both", text: "Обе" } ],
+            'doorOpening': [ { value: "left", text: "Левое" }, { value: "right", text: "Правое" } ],
+            'verticalProfile': [ { value: "none", text: "Нет" }, { value: "double", text: "Двухсторонний" }, { value: "singleWithPanel", text: "Односторонний с панелью" } ],
+            'dishwasherWidth': [ { value: "450", text: "450" }, { value: "600", text: "600" } ]
+    };
+
+    for (const id in optionsMap) {
+        const select = document.getElementById(id);
+        if (select) {
+             select.innerHTML = ''; // Очищаем placeholder '...'
+             const currentValue = cabinet[id]; // Получаем текущее значение из данных шкафа
+             optionsMap[id].forEach(opt => {
+                 const option = document.createElement('option');
+                 option.value = opt.value;
+                 option.textContent = opt.text;
+                 if (opt.value === currentValue) {
+                      option.selected = true;
+                 }
+                 select.appendChild(option);
+             });
+              // Добавляем data-set-prop для универсального обновления
+              select.dataset.setProp = id;
+        }
+    }
+}
+
+export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGlobalParams) {
+    //console.log('showCabinetConfigMenu called with x:', x, 'y:', y);
 
     let menu = document.getElementById('cabinetConfigMenu');
     if (!menu) {
         menu = document.createElement('div');
         menu.id = 'cabinetConfigMenu';
-        menu.className = 'popup-menu';
+        menu.className = 'popup-menu'; // Используем класс для общих стилей
         document.body.appendChild(menu);
     }
 
+    // Создаем HTML для меню
     menu.innerHTML = createCabinetConfigMenu(cabinetIndex, cabinets);
 
-    // Устанавливаем начальную позицию в точке клика
-    menu.style.left = `${x + 30}px`; // Смещение вправо, как в showCabinetMenu
-    menu.style.top = `${y - 10}px`;  // Смещение вверх, как в showCabinetMenu
+    // Устанавливаем начальную позицию
+    menu.style.left = `${x + 30}px`;
+    menu.style.top = `${y - 10}px`;
     menu.style.display = 'block';
 
+    // Находим селекторы ТИПА и КОНФИГУРАЦИИ (они могут быть в основном меню шкафа)
+    const cabinetMenu = document.getElementById('cabinetMenu');
+    let typeSelect = cabinetMenu ? cabinetMenu.querySelector('#cabinetType') : null;
+    let configSelect = cabinetMenu ? cabinetMenu.querySelector('#cabinetConfig') : null;
+
+    // Обновляем специфичные поля сразу при открытии
+    updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
+
+    // Добавляем слушатели НА ПЕРЕКЛЮЧЕНИЕ ТИПА/КОНФИГУРАЦИИ в основном меню шкафа
+    // Эти слушатели будут обновлять поля в меню конфигурации
+    const updateFields = () => {
+         // Проверяем, открыто ли еще меню конфигурации
+         if (menu.style.display === 'block') {
+              updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
+         }
+    };
+
+    // Добавляем слушатели, если селекторы найдены
+    if (typeSelect) {
+        // Удаляем старый слушатель, если он был, чтобы избежать дублирования
+        typeSelect.removeEventListener('change', typeSelect._updateConfigFieldsListener);
+        // Сохраняем ссылку на новый слушатель
+        typeSelect._updateConfigFieldsListener = updateFields;
+        typeSelect.addEventListener('change', updateFields);
+    }
+    if (configSelect) {
+        configSelect.removeEventListener('change', configSelect._updateConfigFieldsListener);
+        configSelect._updateConfigFieldsListener = updateFields;
+        configSelect.addEventListener('change', updateFields);
+    }
+
+    // Автоматический select() при фокусе на числовые поля
     const inputs = menu.querySelectorAll('input[type="number"]');
     inputs.forEach(input => {
         input.addEventListener('focus', () => input.select());
     });
 
-    const cabinetMenu = document.getElementById('cabinetMenu');
+    // Скрываем основное меню шкафа, если оно открыто
     if (cabinetMenu) {
         cabinetMenu.style.display = 'none';
     }
 
-    // Удаляем старый обработчик keydown, если он был
-    menu.removeEventListener('keydown', menu.onkeydown);
+    // Обработка Enter внутри меню конфигурации
+    menu.removeEventListener('keydown', menu._handleKeyDown); // Удаляем старый
     const handleKeyDown = (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();
-            applyCabinetConfigChanges(cabinetIndex);
+            // Вызываем функцию применения изменений КОНФИГУРАЦИИ
+            window.applyCabinetConfigChanges(cabinetIndex); // Убедись, что эта функция доступна глобально
         }
     };
     menu.addEventListener('keydown', handleKeyDown);
-    menu.onkeydown = handleKeyDown;
+    menu._handleKeyDown = handleKeyDown; // Сохраняем ссылку
 
-    // Обновляем специфичные поля при изменении типа или конфигурации
-    const typeSelect = document.getElementById('cabinetType');
-    const configSelect = document.getElementById('cabinetConfig');
-    const updateFields = () => updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
-    typeSelect.addEventListener('change', updateFields);
-    configSelect.addEventListener('change', updateFields);
-
-    // Изначально заполняем поля
-    updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobalParams);
-
-    // Корректируем позицию, чтобы не выходить за пределы окна
+    // Корректировка позиции меню
     setTimeout(() => {
         const menuWidth = menu.offsetWidth;
         const menuHeight = menu.offsetHeight;
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
 
-        let left = x + 30;
-        let top = y - 10;
+        let left = parseFloat(menu.style.left); // Получаем текущее значение
+        let top = parseFloat(menu.style.top);
 
         if (left + menuWidth > screenWidth) left = screenWidth - menuWidth - 5;
         if (left < 0) left = 5;
-        if (top + menuHeight > screenHeight) top = screenHeight - menuHeight - 5;
+        // --- ИСПРАВЛЕНИЕ: Коррекция по НИЖНЕЙ границе ---
+        if (top + menuHeight > screenHeight) {
+            top = screenHeight - menuHeight - 35; // Поднимаем меню вверх
+            console.log(`[showCabinetConfigMenu] Меню скорректировано по высоте: top=${top}px`);
+        }
+        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         if (top < 0) top = 5;
 
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
+
+        // Фокус на первом поле ввода в меню КОНФИГУРАЦИИ
+        const firstInput = menu.querySelector('input, select');
+        if (firstInput) {
+            firstInput.focus();
+             if(firstInput.select) firstInput.select(); // select() для текстовых/числовых полей
+        }
+
     }, 0);
 }
 
+
+// Функция скрытия меню конфигурации
 export function hideCabinetConfigMenu() {
     const menu = document.getElementById('cabinetConfigMenu');
     if (menu) {
         menu.style.display = 'none';
-        const cabinetMenu = document.getElementById('cabinetMenu');
-        if (cabinetMenu) {
-            cabinetMenu.style.display = 'block';
+        // Удаляем слушатели с typeSelect/configSelect при закрытии, чтобы не вызывать updateFields зря
+         const cabinetMenu = document.getElementById('cabinetMenu');
+         if (cabinetMenu) {
+             const typeSelect = cabinetMenu.querySelector('#cabinetType');
+             const configSelect = cabinetMenu.querySelector('#cabinetConfig');
+             if (typeSelect && typeSelect._updateConfigFieldsListener) {
+                  typeSelect.removeEventListener('change', typeSelect._updateConfigFieldsListener);
+                  delete typeSelect._updateConfigFieldsListener; // Очищаем ссылку
+             }
+             if (configSelect && configSelect._updateConfigFieldsListener) {
+                  configSelect.removeEventListener('change', configSelect._updateConfigFieldsListener);
+                  delete configSelect._updateConfigFieldsListener;
+             }
+              // Показываем основное меню шкафа обратно
+              //cabinetMenu.style.display = 'block';
+         }
+         // Удаляем обработчик Enter
+         if (menu._handleKeyDown) {
+             menu.removeEventListener('keydown', menu._handleKeyDown);
+             delete menu._handleKeyDown;
+         }
+    }
+}
+
+// --- Функция отображения Менеджера Наборов Фасадов ---
+export function showFacadeSetsManager(x = window.innerWidth / 2, y = window.innerHeight / 2) {
+    console.log("Открытие менеджера наборов фасадов");
+    // Закрываем другие меню, если нужно
+    hideKitchenParamsMenu(); // Скроем меню глобальных настроек
+
+    let managerMenu = document.getElementById('facadeSetsManagerMenu');
+    if (!managerMenu) {
+        managerMenu = document.createElement('div');
+        managerMenu.id = 'facadeSetsManagerMenu';
+        managerMenu.className = 'facade-sets-manager'; // Новый класс для стилей
+        document.body.appendChild(managerMenu);
+    }
+
+    // Генерируем HTML меню
+    managerMenu.innerHTML = createFacadeSetsManagerHTML();
+
+    // Позиционирование меню
+    managerMenu.style.display = 'block';
+    setTimeout(() => { // Даем время на рендеринг для расчета размеров
+        const menuWidth = managerMenu.offsetWidth;
+        const menuHeight = managerMenu.offsetHeight;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let adjustedX = x - menuWidth / 2; // Центрируем по X относительно точки вызова
+        let adjustedY = y; // Y оставляем как передан
+
+        // Коррекция по границам окна
+        if (adjustedX + menuWidth > viewportWidth) adjustedX = viewportWidth - menuWidth - 10;
+        if (adjustedY + menuHeight > viewportHeight) adjustedY = viewportHeight - menuHeight - 10;
+        adjustedX = Math.max(10, adjustedX);
+        adjustedY = Math.max(10, adjustedY);
+
+        managerMenu.style.left = `${adjustedX}px`;
+        managerMenu.style.top = `${adjustedY}px`;
+    }, 0);
+
+    // Добавляем обработчики (например, для кнопки "Добавить")
+    const addButton = managerMenu.querySelector('#addFacadeSetBtn');
+    if (addButton) {
+        addButton.onclick = addFacadeSetRow; // Вызываем функцию добавления строки
+    }
+
+     // Добавляем обработчики для существующих строк (если они были загружены)
+     updateRowHandlers(); // Функция для обновления обработчиков строк
+}
+
+// --- Функция генерации HTML для Менеджера ---
+function createFacadeSetsManagerHTML() {
+    let tableHeader = `
+        <div class="facade-set-row header">
+            <div class="facade-set-cell name-col">Название набора</div>
+            <div class="facade-set-cell material-col">Тип материала</div>
+            <div class="facade-set-cell texture-col">Текстура</div>
+            <div class="facade-set-cell color-col">Цвет</div>
+            <div class="facade-set-cell thickness-col">Толщина, мм</div>
+            <div class="facade-set-cell actions-col"></div> 
+        </div>
+    `;
+
+    let tableRows = '';
+    // Генерируем строки для существующих наборов в window.facadeSetsData
+    window.facadeSetsData.forEach((setData, index) => {
+        tableRows += createFacadeSetRowHTML(setData, index); // Используем данные из массива
+    });
+
+    return `
+        <h3>Наборы Фасадов</h3>
+        <div class="facade-sets-table-container">
+            ${tableHeader}
+            <div id="facadeSetsRowsContainer">
+                ${tableRows}
+            </div>
+        </div>
+        <div class="manager-buttons">
+            <button id="addFacadeSetBtn">Добавить набор</button>
+            <button onclick="applyFacadeSetsChanges()">Применить все</button>
+            <button onclick="hideFacadeSetsManager()">Закрыть</button>
+        </div>
+    `;
+}
+
+// --- Функция генерации HTML для ОДНОЙ Строки Набора Фасадов ---
+
+function createFacadeSetRowHTML(setData, index) {
+    const loadedFacadeData = window.facadeOptionsData || {}; // Получаем загруженные данные
+    // --- Добавляем лог для проверки данных ---
+    // console.log("[createFacadeSetRowHTML] Данные для генерации строки:", loadedFacadeData);
+    if (Object.keys(loadedFacadeData).length === 0) {
+        console.error("[createFacadeSetRowHTML] Ошибка: Загруженные данные facadeOptionsData пусты!");
+    }
+    // -----------------------------------------
+
+    const setId = setData.id || `set_${Date.now()}_${index}`;
+    const setName = setData.name || `Набор фасадов ${index + 1}`;
+    // Определяем текущий тип материала, проверяя, есть ли он в загруженных данных
+    let currentMaterialType = setData.materialType;
+    if (!currentMaterialType || !loadedFacadeData[currentMaterialType]) {
+        // Если тип не задан или некорректен, берем первый ключ из загруженных данных
+        currentMaterialType = Object.keys(loadedFacadeData)[0];
+        console.warn(`[createFacadeSetRowHTML] Тип материала для ${setId} не найден или некорректен, используется дефолтный: ${currentMaterialType}`);
+        if (!currentMaterialType) { // На случай, если и данных нет
+            console.error("[createFacadeSetRowHTML] Не найдено ни одного типа материала в загруженных данных!");
+            currentMaterialType = 'ldsp'; // Крайний случай
         }
     }
+
+    const currentMaterialInfo = loadedFacadeData[currentMaterialType] || {};
+    const useColor = currentMaterialInfo.useColorPicker || false;
+    const currentTextureValue = setData.texture;
+    const currentColorValue = setData.color || '#ffffff';
+    const currentThickness = setData.thickness !== undefined ? setData.thickness : currentMaterialInfo.defaultThickness || 18;
+    const isThicknessEditable = currentMaterialInfo.isThicknessEditable !== undefined ? currentMaterialInfo.isThicknessEditable : true;
+    const minThickness = currentMaterialInfo.minThickness || 12;
+    const maxThickness = currentMaterialInfo.maxThickness || 22;
+
+    const textureDisabled = useColor ? 'disabled' : '';
+    const colorDisabled = !useColor ? 'disabled' : '';
+
+    // --- Формируем опции для ТИПА МАТЕРИАЛА с отладкой ---
+    let materialOptions = ''; // Инициализируем пустой строкой
+    try {
+        const materialKeys = Object.keys(loadedFacadeData);
+        console.log(`[createFacadeSetRowHTML] Ключи материалов для селекта (${setId}):`, materialKeys); // Лог ключей
+        if (materialKeys.length === 0) {
+             console.warn(`[createFacadeSetRowHTML] Нет ключей материалов в loadedFacadeData для генерации опций!`);
+        }
+        materialOptions = materialKeys.map(key => {
+            const materialInfo = loadedFacadeData[key];
+            const name = materialInfo?.name || key; // Используем имя или ключ как fallback
+            const selectedAttr = key === currentMaterialType ? 'selected' : '';
+            // console.log(` - Генерация опции: value=${key}, text=${name}, selected=${selectedAttr}`); // Лог для каждой опции
+            return `<option value="${key}" ${selectedAttr}>${name}</option>`;
+        }).join('');
+         console.log(`[createFacadeSetRowHTML] Сгенерированные опции материала (${setId}): ${materialOptions.length > 100 ? materialOptions.substring(0,100)+'...' : materialOptions}`); // Лог результата
+    } catch (error) {
+        console.error(`[createFacadeSetRowHTML] Ошибка при генерации опций материала для ${setId}:`, error);
+        materialOptions = '<option value="">Ошибка</option>'; // Показываем ошибку в селекте
+    }
+    // --- Конец блока генерации опций материала ---
+
+    // Формируем опции для текстуры/декора (оставляем как было)
+    let textureOptions = '';
+    // ... (Ваш существующий код генерации textureOptions) ...
+    if (!useColor && currentMaterialInfo.decors && currentMaterialInfo.decors.length > 0) {
+        textureOptions = currentMaterialInfo.decors.map(decor => {
+            const colorSwatch = `<span class="color-swatch" style="background-color:${decor.displayColor || '#ccc'};"></span>`;
+            return `<option value="${decor.value}" data-color="${decor.displayColor || '#ccc'}" ${decor.value === currentTextureValue ? 'selected' : ''}>${decor.text}</option>`;
+        }).join('');
+        // Добавляем цветные квадратики в CSS через data-атрибут
+         const styles = currentMaterialInfo.decors.map(decor =>
+            `.facade-set-row .texture-select option[data-color="${decor.displayColor || '#ccc'}"] {
+                 background-image: linear-gradient(to right, ${decor.displayColor || '#ccc'}, ${decor.displayColor || '#ccc'} 16px, transparent 16px);
+             }`
+         ).join('\n');
+         // Добавляем стили динамически (менее предпочтительно, лучше в CSS)
+         /*
+         let styleSheet = document.getElementById('dynamic-facade-styles');
+         if (!styleSheet) {
+             styleSheet = document.createElement('style');
+             styleSheet.id = 'dynamic-facade-styles';
+             document.head.appendChild(styleSheet);
+         }
+         styleSheet.textContent = styles; // Перезаписываем стили
+         */
+
+    } else if (!useColor) {
+        textureOptions = '<option value="">-- Нет декоров --</option>';
+    }
+
+    // Генерируем HTML строки
+    return `
+        <div class="facade-set-row" data-id="${setId}" data-index="${index}">
+            <div class="facade-set-cell name-col">
+                <input type="text" value="${setName}" placeholder="Введите имя..." data-set-prop="name">
+            </div>
+            <div class="facade-set-cell material-col">
+                <select class="material-type-select" data-set-prop="materialType">${materialOptions}</select>
+            </div>
+            <div class="facade-set-cell decor-color-col">
+                <button type="button" class="decor-select-btn" title="Выбрать декор или цвет">
+                </button>
+            </div>
+            <div class="facade-set-cell thickness-col">
+                <input type="number" class="thickness-input" value="${currentThickness}"
+                       min="${minThickness}" max="${maxThickness}" ${isThicknessEditable ? '' : 'readonly'}
+                       data-set-prop="thickness" ${isThicknessEditable ? '' : 'class="readonly-style"'}>
+            </div>
+            <div class="facade-set-cell actions-col">
+                 <button class="delete-set-btn" title="Удалить набор">🗑️</button>
+            </div>
+        </div>
+    `;
+
+    // --- Расчет displayContent и displayText для кнопки (после генерации основного HTML) ---
+     // Этот код должен быть ВНУТРИ функции, но ПОСЛЕ генерации основного HTML строки
+     // и перед return, чтобы обновить кнопку.
+     // Проще обновить кнопку через JS после вставки строки в DOM.
+     // Поэтому этот блок пока удаляем отсюда. Обновление кнопки будет в updateRowHandlers.
+}
+
+// --- Вспомогательные функции для толщины ---
+function getDefaultFacadeThickness(materialType) {
+    switch (materialType) {
+        case 'mdf_smooth':
+        case 'mdf_milled':
+            return 19;
+        case 'ldsp':
+        case 'agt_supramat':
+        case 'agt_one_side':
+        case 'pet':
+        case 'cleaf':
+        default:
+            return 18;
+    }
+}
+
+function isFacadeThicknessEditable(materialType) {
+    switch (materialType) {
+        case 'ldsp':
+        case 'mdf_smooth':
+        case 'mdf_milled':
+            return true;
+        default:
+            return false;
+    }
+}
+
+function getFacadeThicknessConstraints(materialType) {
+    switch (materialType) {
+        case 'ldsp':
+            return { minThickness: 12, maxThickness: 22 };
+        case 'mdf_smooth':
+        case 'mdf_milled':
+            return { minThickness: 19, maxThickness: 22 };
+        default:
+            // Для нередактируемых возвращаем их значение по умолчанию
+            const defaultThickness = getDefaultFacadeThickness(materialType);
+            return { minThickness: defaultThickness, maxThickness: defaultThickness };
+    }
+}
+
+// --- Функция добавления новой строки в таблицу ---
+// --- Обновляем addFacadeSetRow ---
+export function addFacadeSetRow() {
+    console.log("Добавление нового набора фасадов");
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const firstMaterialType = Object.keys(loadedFacadeData)[0] || 'ldsp'; // Первый доступный тип
+    const firstMaterialInfo = loadedFacadeData[firstMaterialType] || {};
+    const firstDecor = firstMaterialInfo.decors?.[0];
+
+    const nextIndex = window.facadeSetsData.length;
+    const newSetData = {
+        id: `set_${Date.now()}_${nextIndex}`,
+        name: `Набор фасадов ${nextIndex + 1}`,
+        materialType: firstMaterialType,
+        texture: firstMaterialInfo.useColorPicker ? null : (firstDecor?.value || ''), // Текстура или null
+        color: firstMaterialInfo.useColorPicker ? '#ffffff' : null, // Белый или null
+        thickness: firstMaterialInfo.defaultThickness || 18,
+        // isThicknessEditable, min/max не храним здесь
+    };
+    window.facadeSetsData.push(newSetData);
+
+    const rowsContainer = document.getElementById('facadeSetsRowsContainer');
+    if (rowsContainer) {
+        rowsContainer.insertAdjacentHTML('beforeend', createFacadeSetRowHTML(newSetData, nextIndex));
+        updateRowHandlers();
+    } else { console.error("Контейнер #facadeSetsRowsContainer не найден!"); }
+}
+
+// --- Обновляем updateRowHandlers, чтобы он вызывал обновление кнопки ---
+function updateRowHandlers() {
+    const rowsContainer = document.getElementById('facadeSetsRowsContainer');
+    if (!rowsContainer) return;
+
+    rowsContainer.querySelectorAll('.facade-set-row').forEach(row => {
+        const setId = row.dataset.id;
+        const rowIndex = parseInt(row.dataset.index);
+
+        // --- Обновляем кнопку выбора декора/цвета СРАЗУ ---
+        updateDecorColorButton(row); // <--- Вызываем новую функцию
+
+        // --- Имя, Материал, Толщина, Удаление (как раньше) ---
+        const nameInput = row.querySelector('input[type="text"]');
+         if (nameInput) { nameInput.onchange = (e) => { const sd = window.facadeSetsData.find(s=>s.id===setId); if(sd) sd.name = e.target.value; updateDecorColorButton(row);}; } // Обновляем кнопку при смене имени тоже
+        const materialSelect = row.querySelector('.material-type-select');
+         if(materialSelect){ materialSelect.removeEventListener('change', handleMaterialTypeChange); materialSelect.addEventListener('change', (e) => { handleMaterialTypeChange(e); updateDecorColorButton(row); }); } // Обновляем кнопку после смены материала
+        const thicknessInput = row.querySelector('.thickness-input');
+         if(thicknessInput){ thicknessInput.removeEventListener('change', handleThicknessChange); thicknessInput.addEventListener('change', handleThicknessChange); }
+        const deleteButton = row.querySelector('.delete-set-btn');
+         if(deleteButton){ deleteButton.removeEventListener('click', handleDeleteSet); deleteButton.addEventListener('click', handleDeleteSet); }
+
+        // --- Слушатель для кнопки выбора декора ---
+        const decorButton = row.querySelector('.decor-select-btn');
+        if (decorButton) {
+            decorButton.replaceWith(decorButton.cloneNode(true));
+            row.querySelector('.decor-select-btn').addEventListener('click', () => {
+                openDecorPickerModal(rowIndex, setId);
+            });
+        }
+    });
+}
+
+// --- Обработчик изменения типа материала ---
+// --- Обновляем handleMaterialTypeChange ---
+function handleMaterialTypeChange(event) {
+    const select = event.target;
+    const row = select.closest('.facade-set-row');
+    if (!row) return;
+
+    const newMaterialType = select.value;
+    const rowIndex = parseInt(row.dataset.index);
+    const setId = row.dataset.id;
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const newMaterialInfo = loadedFacadeData[newMaterialType] || {};
+
+    console.log(`Изменен тип материала для ${setId} на: ${newMaterialType}`);
+
+    const setData = window.facadeSetsData.find(set => set.id === setId);
+    if (!setData) { console.error(`Не найдены данные для ID ${setId}`); return; }
+
+    // Обновляем тип материала в данных
+    setData.materialType = newMaterialType;
+
+    // Обновляем Текстуру/Цвет
+    const textureSelectContainer = row.querySelector('.texture-col'); // Находим контейнер селекта
+    const colorInputContainer = row.querySelector('.color-col'); // Находим контейнер цвета
+    const decorButton = row.querySelector('.decor-select-btn'); // Кнопка для вызова модалки
+    const useColor = newMaterialInfo.useColorPicker || false;
+
+    // Скрываем/показываем нужные элементы УПРАВЛЕНИЯ (селект или инпут цвета)
+    // Вместо этого мы обновляем кнопку decorButton ниже
+
+    // --- ИСПРАВЛЕНИЕ: Обновление данных setData.texture или setData.color ---
+    if (useColor) {
+        setData.texture = null; // Сбрасываем текстуру
+        // Устанавливаем цвет по умолчанию, если его нет
+        if (!setData.color) {
+            setData.color = '#ffffff';
+        }
+        console.log(` - Установлен режим выбора цвета. Цвет: ${setData.color}`);
+    } else { // Используем текстуры/декоры
+        setData.color = null; // Сбрасываем цвет
+        // Назначаем ПЕРВЫЙ декор из списка нового материала по умолчанию
+        if (newMaterialInfo.decors && newMaterialInfo.decors.length > 0) {
+            setData.texture = newMaterialInfo.decors[0].value; // <--- Устанавливаем первый декор
+            console.log(` - Установлен режим выбора текстуры. Декор по умолчанию: ${setData.texture}`);
+        } else {
+            setData.texture = ''; // Нет декоров для этого типа
+            console.log(` - Текстуры для типа ${newMaterialType} не найдены.`);
+        }
+    }
+    // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
+    // Обновляем поле Толщина
+    const thicknessInput = row.querySelector('.thickness-input');
+    if (thicknessInput) {
+        const defaultThickness = newMaterialInfo.defaultThickness || 18;
+        const isEditable = newMaterialInfo.isThicknessEditable !== undefined ? newMaterialInfo.isThicknessEditable : true;
+        const minThickness = newMaterialInfo.minThickness || 12;
+        const maxThickness = newMaterialInfo.maxThickness || 22;
+
+        thicknessInput.value = defaultThickness;
+        thicknessInput.readOnly = !isEditable;
+        thicknessInput.min = minThickness;
+        thicknessInput.max = maxThickness;
+        thicknessInput.classList.toggle('readonly-style', !isEditable);
+
+        // Обновляем данные толщины
+        setData.thickness = defaultThickness;
+    }
+
+    // Обновляем вид кнопки выбора декора/цвета
+    updateDecorColorButton(row); // Вызываем обновление кнопки
+
+    console.log("Обновленные данные setData после смены типа:", setData);
+}
+
+// --- Обработчик изменения толщины (Пример валидации) ---
+function handleThicknessChange(event) {
+    const input = event.target;
+    const row = input.closest('.facade-set-row');
+    if (!row) return;
+    const setId = row.dataset.id;
+    const setData = window.facadeSetsData.find(set => set.id === setId);
+
+    // Получаем информацию о редактируемости и ограничениях
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const materialInfo = loadedFacadeData[setData?.materialType] || {};
+    const isEditable = materialInfo.isThicknessEditable !== undefined ? materialInfo.isThicknessEditable : true;
+    const constraints = getFacadeThicknessConstraints(setData?.materialType);
+
+    // Проверяем, найдены ли данные и редактируема ли толщина
+    if (!setData || !isEditable) {
+        console.log(`Толщина для ${setId} не редактируема или данные не найдены.`);
+        // Восстанавливаем значение из данных или дефолтное
+        input.value = setData ? (setData.thickness || constraints.minThickness) : constraints.minThickness;
+        return;
+    }
+
+    let newValueMm = parseFloat(input.value.replace(',', '.'));
+
+    // Валидация и ограничение
+    if (isNaN(newValueMm)) {
+         // Восстанавливаем предыдущее значение из setData ИЛИ минимум
+         newValueMm = setData.thickness || constraints.minThickness;
+         console.warn(`Некорректный ввод толщины, восстановлено: ${newValueMm} мм`);
+    } else {
+         // Ограничиваем значение по min/max
+         newValueMm = Math.round(Math.max(constraints.minThickness, Math.min(constraints.maxThickness, newValueMm))); // Округляем до целого мм
+    }
+
+    input.value = newValueMm; // Обновляем поле ввода (в мм)
+
+    // --- ИСПРАВЛЕНО: Обновляем данные в window.facadeSetsData (в мм) ---
+    setData.thickness = newValueMm; // Сохраняем округленное целое значение
+    // --------------------------------------------------------------
+
+    console.log(`Толщина для ${setId} (${setData.name}) изменена на ${newValueMm} мм`);
+
+    // --- ДОБАВЛЕНО: Пересчет позиции нижних шкафов, использующих этот набор ---
+    console.log(`Пересчет позиции нижних шкафов, использующих набор ${setId}...`);
+    let cabinetsUpdated = 0;
+    if (typeof window.cabinets !== 'undefined' && Array.isArray(window.cabinets)) {
+         window.cabinets.forEach((cab, cabIndex) => {
+              if (cab.facadeSet === setId && cab.type === 'lowerCabinet' && cab.wallId !== 'Bottom') {
+                   const oldOffset = cab.offsetFromParentWall;
+                   cab.offsetFromParentWall = calculateLowerCabinetOffset(cab); // Пересчитываем
+                   if (Math.abs(oldOffset - cab.offsetFromParentWall) > 1e-5) {
+                        console.log(` - Обновление позиции шкафа ${cab.mesh?.uuid} (индекс ${cabIndex})`);
+                        updateCabinetPosition(cab);
+                        // Если шкаф детализирован, его нужно пересоздать, чтобы отразить новую позицию деталей
+                        if (cab.isDetailed) {
+                             console.log(`   - Пересоздание детализации для шкафа ${cab.mesh?.uuid}`);
+                             toggleCabinetDetail(cabIndex); // -> Простой
+                             toggleCabinetDetail(cabIndex); // -> Детализированный с новой позицией
+                        }
+                        cabinetsUpdated++;
+                   }
+              }
+         });
+    }
+     console.log(`Обновлено позиций шкафов: ${cabinetsUpdated}`);
+    // --- КОНЕЦ ПЕРЕСЧЕТА ---
+}
+
+
+// --- Обработчик удаления строки ---
+function handleDeleteSet(event) {
+    const button = event.target;
+    const row = button.closest('.facade-set-row');
+    if (!row) return;
+
+    const setId = row.dataset.id;
+    const rowIndex = parseInt(row.dataset.index);
+
+    if (confirm(`Удалить "${window.facadeSetsData[rowIndex]?.name || 'этот набор'}"?`)) {
+        console.log(`Удаление набора ID: ${setId}, Индекс: ${rowIndex}`);
+        // Удаляем данные из массива
+        window.facadeSetsData = window.facadeSetsData.filter(set => set.id !== setId);
+        // Удаляем строку из DOM
+        row.remove();
+        // TODO: Перенумеровать data-index у оставшихся строк, если это важно
+        // TODO: Проверить, используется ли этот набор где-то, и сбросить на дефолтный
+    }
+}
+
+
+// --- Обновляем applyFacadeSetsChanges ---
+export function applyFacadeSetsChanges() {
+    // Данные УЖЕ должны быть обновлены в window.facadeSetsData благодаря onchange обработчикам
+    console.log("Применение изменений наборов фасадов");
+    console.log("Финальные данные:", JSON.stringify(window.facadeSetsData, null, 2));
+
+    // TODO: Здесь можно добавить логику для сохранения данных (например, в localStorage)
+    // localStorage.setItem('facadeSets', JSON.stringify(window.facadeSetsData));
+
+    // TODO: Обновить выпадающие списки выбора набора фасадов в других частях интерфейса, если они есть
+    // updateFacadeSetSelectorsInCabinets();
+
+    if (typeof window.applyKitchenParams === 'function') {
+        console.log("Вызов window.applyKitchenParams() для обновления сцены после изменения наборов фасадов...");
+        window.applyKitchenParams(); // <--- ВЫЗЫВАЕМ ГЛОБАЛЬНУЮ ФУНКЦИЮ
+    } else {
+        console.error("Функция window.applyKitchenParams не найдена! Сцена не будет обновлена автоматически.");
+        alert("Наборы фасадов сохранены, но для обновления сцены может потребоваться дополнительное действие (например, применить общие параметры кухни).");
+    }
+
+    hideFacadeSetsManager();
+}
+
+// --- Функция скрытия Менеджера ---
+export function hideFacadeSetsManager() {
+    const managerMenu = document.getElementById('facadeSetsManagerMenu');
+    if (managerMenu) {
+        managerMenu.style.display = 'none';
+        // Можно показать меню глобальных настроек обратно, если оно было скрыто
+         // const kitchenMenu = document.getElementById('kitchenParamsMenu');
+         // if (kitchenMenu) kitchenMenu.style.display = 'block';
+    }
+}
+
+export function hideKitchenParamsMenu() {
+    const menu = document.getElementById('kitchenParamsMenu');
+    if (menu) {
+        menu.style.display = 'none';
+        // Возможно, нужно удалить обработчик keydown, если он добавлялся
+         if (menu._handleKeyDown) {
+             menu.removeEventListener('keydown', menu._handleKeyDown);
+             delete menu._handleKeyDown;
+         }
+    }
+}
+
+// --- Вспомогательная функция для обновления списков в меню шкафов (Пример) ---
+function updateFacadeSetSelectorsInCabinets() {
+    const facadeSetOptionsHTML = window.facadeSetsData.map((set, index) =>
+        `<option value="${set.id}">${set.name}</option>`
+    ).join('');
+
+    // Находим все select'ы с фасадами в ДОМ (например, в открытых меню шкафов)
+    document.querySelectorAll('#cabinetConfig, #cabinetConfigMenu select#facadeSet').forEach(select => {
+        // Сохраняем текущее выбранное значение, если оно есть и валидно
+        const currentSelectedId = select.value;
+        const stillExists = window.facadeSetsData.some(set => set.id === currentSelectedId);
+
+        select.innerHTML = facadeSetOptionsHTML; // Обновляем опции
+
+        // Пытаемся восстановить выбор
+        if (stillExists) {
+            select.value = currentSelectedId;
+        } else if (window.facadeSetsData.length > 0) {
+            select.value = window.facadeSetsData[0].id; // Выбираем первый, если старый удален
+        }
+    });
+}
+
+// --- Функция открытия Модального Окна Выбора Декора ---
+function openDecorPickerModal(rowIndex, setId) {
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const setData = window.facadeSetsData.find(set => set.id === setId);
+    if (!setData) { console.error("Не найдены данные для открытия модального окна"); return; }
+
+    const materialType = setData.materialType;
+    const materialInfo = loadedFacadeData[materialType] || {};
+    const useColor = materialInfo.useColorPicker || false;
+
+    // --- Создаем или находим модальное окно ---
+    let modal = document.getElementById('decorPickerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'decorPickerModal';
+        modal.className = 'decor-picker-modal';
+        document.body.appendChild(modal);
+    }
+
+    // --- Генерируем содержимое модального окна ---
+    let modalContentHTML = `
+        <div class="decor-picker-content">
+            <span class="decor-picker-close">×</span>
+            <div class="decor-picker-header">Выбор для: ${materialInfo.name || materialType}</div>
+    `;
+
+    if (useColor) {
+        // --- Отображаем Color Picker ---
+        modalContentHTML += `
+            <div class="decor-color-picker-container">
+                <label for="modalColorPicker">Выберите цвет:</label>
+                <input type="color" id="modalColorPicker" value="${setData.color || '#ffffff'}">
+            </div>
+        `;
+    } else if (materialInfo.decors && materialInfo.decors.length > 0) {
+        // --- Отображаем Сетку Превью ---
+        modalContentHTML += '<div class="decor-grid">';
+        materialInfo.decors.forEach(decor => {
+            let previewElement = '';
+            if (decor.previewImage) {
+                previewElement = `<img src="${decor.previewImage}" alt="${decor.text}" class="decor-preview-img">`;
+            } else {
+                previewElement = `<span class="color-swatch" style="background-color:${decor.displayColor || '#ccc'};"></span>`;
+            }
+            modalContentHTML += `
+                <div class="decor-grid-item" data-decor-value="${decor.value}" title="${decor.text}">
+                    ${previewElement}
+                    <span>${decor.text}</span>
+                </div>
+            `;
+        });
+        modalContentHTML += '</div>'; // end decor-grid
+    } else {
+        // --- Нет ни цвета, ни декоров ---
+        modalContentHTML += `<div style="text-align: center; padding: 20px;">Нет доступных опций для материала "${materialInfo.name || materialType}".</div>`;
+    }
+
+    modalContentHTML += '</div>'; // end decor-picker-content
+    modal.innerHTML = modalContentHTML;
+
+    // --- Добавляем Обработчики для Модального Окна ---
+    const closeButton = modal.querySelector('.decor-picker-close');
+    if (closeButton) {
+        closeButton.onclick = () => modal.style.display = 'none';
+    }
+
+    // Закрытие по клику вне окна
+    modal.onclick = (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    };
+
+    if (useColor) {
+        // Обработчик для color picker
+        const colorPicker = modal.querySelector('#modalColorPicker');
+        if (colorPicker) {
+            colorPicker.onchange = (event) => {
+                const newColor = event.target.value;
+                console.log(`Выбран цвет: ${newColor} для ${setId}`);
+                updateFacadeSelection(rowIndex, setId, null, newColor); // Обновляем данные и кнопку
+                modal.style.display = 'none'; // Закрываем окно
+            };
+        }
+    } else {
+        // Обработчик клика по ячейке сетки
+        modal.querySelectorAll('.decor-grid-item').forEach(item => {
+            item.onclick = () => {
+                const selectedDecorValue = item.dataset.decorValue;
+                console.log(`Выбран декор: ${selectedDecorValue} для ${setId}`);
+                updateFacadeSelection(rowIndex, setId, selectedDecorValue, null); // Обновляем данные и кнопку
+                modal.style.display = 'none'; // Закрываем окно
+            };
+        });
+    }
+
+    // --- Показываем модальное окно ---
+    modal.style.display = 'block';
+}
+// --- Вспомогательная функция для обновления данных и кнопки после выбора в модальном окне ---
+// --- Обновляем updateFacadeSelection, чтобы она вызывала updateDecorColorButton ---
+function updateFacadeSelection(rowIndex, setId, newTextureValue, newColorValue) {
+    const setData = window.facadeSetsData.find(set => set.id === setId);
+    if (!setData) return;
+    const row = document.querySelector(`.facade-set-row[data-id="${setId}"]`);
+    if (!row) return;
+
+    // Обновляем данные
+    setData.texture = newTextureValue;
+    setData.color = newColorValue;
+
+    // Обновляем вид кнопки
+    updateDecorColorButton(row);
+
+    console.log(`Данные для ${setId} обновлены:`, setData);
+}
+
+// --- НОВАЯ функция для обновления кнопки выбора декора/цвета ---
+function updateDecorColorButton(rowElement) {
+    if (!rowElement) return;
+    const setId = rowElement.dataset.id;
+    const setData = window.facadeSetsData.find(set => set.id === setId);
+    if (!setData) return;
+
+    const decorSelectBtn = rowElement.querySelector('.decor-select-btn');
+    if (!decorSelectBtn) return;
+
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const materialInfo = loadedFacadeData[setData.materialType] || {};
+    const useColor = materialInfo.useColorPicker || false;
+
+    let displayContent = '';
+    let displayText = 'Выбрать...';
+
+    if (useColor) {
+        displayContent = `<span class="color-swatch" style="background-color:${setData.color || '#ffffff'}; border: 1px solid #eee;"></span>`;
+        displayText = setData.color || '#ffffff';
+    } else if (setData.texture) {
+        const selectedDecor = materialInfo.decors?.find(d => d.value === setData.texture);
+        if (selectedDecor) {
+             if (selectedDecor.previewImage) {
+                 displayContent = `<img src="${selectedDecor.previewImage}" alt="${selectedDecor.text}" class="decor-preview-img">`;
+             } else {
+                 displayContent = `<span class="color-swatch" style="background-color:${selectedDecor.displayColor || '#ccc'};"></span>`;
+             }
+             displayText = selectedDecor.text || setData.texture;
+        } else {
+             displayText = `Не найден: ${setData.texture}`; // Если декор удален из данных
+        }
+    }
+
+    decorSelectBtn.innerHTML = `
+        ${displayContent}
+        <span class="decor-select-text">${displayText}</span>
+    `;
 }
