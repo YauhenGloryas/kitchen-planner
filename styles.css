@@ -325,77 +325,64 @@ button {
     position: absolute;
     background-color: #fff;
     border: 1px solid #ccc;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* Немного мягче тень */
-    padding: 15px; /* Увеличим отступы */
-    z-index: 1000; /* Базовый z-index */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 15px;
+    z-index: 1000;
     width: 400px;
     font-family: Arial, sans-serif;
     box-sizing: border-box;
-    display: flex; /* Используем flex для компоновки */
-    flex-direction: column; /* Заголовок, контент, кнопки - друг под другом */
 
-    /* --- Ограничение высоты и прокрутка для ВСЕГО меню --- */
-    max-height: calc(90vh - 40px); /* Макс. высота = 90% окна минус отступы */
-    /* overflow: hidden; */ /* Убираем overflow с самого меню */
-}
+    display: flex; /* УСТАНАВЛИВАЕМ FLEX ЗДЕСЬ ДЛЯ ВИДИМОГО СОСТОЯНИЯ */
+    flex-direction: column;
+    max-height: calc(100vh - 44px - 80px);
 
-.popup-menu .menu-buttons {
-    display: flex;
-    /* justify-content: space-around; */ /* Заменяем */
-    justify-content: space-between; /* Прижмет крайние кнопки */
-    flex-wrap: wrap; /* Разрешаем перенос кнопок */
-    gap: 8px; /* Небольшой отступ между кнопками, если перенесутся */
-    padding-top: 5px;
-    border-top: 1px solid #eee;
-    margin-top: auto;
-}
-
-.popup-menu .menu-buttons button {
-    padding: 6px 12px; /* Уменьшаем padding */
-    font-size: 12px;  /* Уменьшаем шрифт */
-    min-width: auto;  /* Убираем минимальную ширину */
-    /* Остальные стили кнопок (border, background и т.д.) оставляем */
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    color: white; /* Белый текст */
-    flex-grow: 1; /* Позволим кнопкам растягиваться, если есть место */
-    text-align: center; /* Центрируем текст */
+    /* По умолчанию меню будет скрыто через JS или другим классом,
+       но когда оно видимо, оно должно быть flex-контейнером.
+       Если хотите, чтобы CSS скрывал по умолчанию, то:
+       display: none;
+       И в JS при показе menu.style.display = 'flex';
+    */
 }
 
 .popup-menu h3 {
-    margin: 0 0 10px;
+    margin: 0 0 12px; /* Немного увеличим отступ снизу */
     font-size: 16px;
     text-align: center;
-    flex-shrink: 0; /* Заголовок не должен сжиматься */
+    color: #333;
+    flex-shrink: 0; /* Заголовок не должен сжиматься по высоте */
     border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
+    padding-bottom: 12px;
 }
 
 /* Контейнер для ОСНОВНОГО содержимого меню (полей) */
-.menu-content {
+/* Удаляем класс .scrollable из HTML, если он не нужен для других целей,
+   и применяем стили непосредственно к .menu-content */
+   .popup-menu .menu-content { /* Более специфичный селектор, если есть другие .menu-content */
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    /* --- Прокрутка добавляется ТОЛЬКО для .scrollable --- */
-    flex-grow: 1; /* Позволяет этому блоку растягиваться */
-    overflow-y: auto; /* Включаем скролл для этого блока */
-    padding-right: 5px; /* Небольшой отступ для скроллбара */
-    margin-bottom: 10px; /* Отступ перед кнопками */
+    gap: 10px; /* Отступ между label/полями */
+
+    flex-grow: 1; /* Позволяет этому блоку растягиваться и занимать доступное место */
+    overflow-y: auto; /* Включаем вертикальный скролл ТОЛЬКО для этого блока, если контент не помещается */
+    
+    padding-bottom: 15px; /* Отступ снизу перед блоком кнопок */
+    padding-right: 5px;   /* Небольшой отступ справа для полосы прокрутки, если она появится */
+    /* min-height: 0; */ /* Иногда помогает flex-элементам правильно сжиматься, если есть проблемы с overflow */
 }
 
-/* Стили для полей внутри .menu-content (остаются как были или настраиваются) */
-.menu-content label {
+/* Стили для полей внутри .menu-content */
+.popup-menu .menu-content label {
     display: flex;
     flex-direction: column;
-    font-size: 13px; /* Чуть меньше */
-    font-weight: 500; /* Немного тоньше */
+    font-size: 13px;
+    color: #444; /* Чуть темнее для лучшей читаемости */
 }
 
-.menu-content input,
-.menu-content select {
+.popup-menu .menu-content input[type="number"],
+.popup-menu .menu-content input[type="text"],
+.popup-menu .menu-content select {
     width: 100%;
-    padding: 6px 8px;
+    padding: 7px 9px; /* Чуть больше padding для удобства */
     margin-top: 4px;
     box-sizing: border-box;
     border: 1px solid #ccc;
@@ -403,71 +390,58 @@ button {
     font-size: 13px;
 }
 
-.menu-content input[type="color"] {
-    width: 50px; /* Меньше */
-    height: 28px; /* Меньше */
-    padding: 1px;
+.popup-menu .menu-content input[type="color"] {
+    width: 100%; /* Растянем на всю ширину для единообразия */
+    max-width: 70px; /* Но ограничим максимальную ширину */
+    height: 30px; /* Выровняем высоту с другими инпутами */
+    padding: 2px; /* Небольшой внутренний отступ */
+    margin-top: 4px;
 }
 
-.menu-content input[disabled],
-.menu-content input.readonly-style[readonly],
-.menu-content select[disabled] {
-    background-color: #eee;
+.popup-menu .menu-content input:disabled,
+.popup-menu .menu-content input.readonly-style[readonly], /* Добавил .readonly-style для кастомных readonly */
+.popup-menu .menu-content select:disabled {
+    background-color: #f0f0f0; /* Светлее фон для неактивных */
+    color: #888; /* Светлее текст */
     cursor: not-allowed;
 }
 
-/* Контейнер для кнопок внизу */
-.menu-buttons {
+/* Блок кнопок внизу (теперь прямой потомок .popup-menu) */
+.popup-menu .menu-buttons {
     display: flex;
-    justify-content: space-around; /* Равномерно распределить */
-    flex-shrink: 0; /* Кнопки не должны сжиматься */
-    padding-top: 10px;
+    justify-content: space-between; /* Кнопки по краям */
+    gap: 10px; /* Отступ между кнопками */
+    
+    padding-top: 15px; /* Отступ сверху от границы */
     border-top: 1px solid #eee;
-    margin-top: auto; /* Прижать кнопки к низу flex-контейнера */
+    margin-top: auto;   /* Прижимает блок кнопок к низу flex-контейнера .popup-menu */
+    flex-shrink: 0;   /* Блок кнопок не должен сжиматься по высоте */
 }
 
-.menu-content .menu-buttons {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-}
-
-.menu-content button {
-    padding: 5px 10px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.menu-buttons button {
-    padding: 5px 10px; /* Чуть меньше */
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+.popup-menu .menu-buttons button {
+    padding: 8px 12px;
     font-size: 13px;
-    min-width: 100px; /* Минимальная ширина */
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: white;
+    flex-grow: 1; /* Кнопки будут стараться занять равное пространство */
+    text-align: center;
+    min-width: 90px; /* Минимальная ширина, чтобы текст помещался */
 }
 
 
-/* Стили для кнопок Применить/Отмена/Детализация */
-/* Кнопка детализации (первая) */
-.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* Голубой? */
-/* Кнопка Применить (вторая) */
-.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Зеленый */
-/* Кнопка Отмена (третья) */
-.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Красный */
+/* Цвета кнопок (оставляем ваши работающие nth-child для .popup-menu) */
+/* Если это меню конфигурации (ID) */
+#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* toggleDetailBtn - Голубой */
+#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Применить - Зеленый */
+#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Отмена - Красный */
 
+/* Если это основное меню шкафа (ID) */
+#cabinetMenu.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* Настроить - Голубой */
+#cabinetMenu.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Применить - Зеленый */
+#cabinetMenu.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Удалить - Красный */
 
-/* Контейнер для ОСНОВНОГО содержимого (поля + кнопки) */
-.menu-content.scrollable {
-    display: flex; /* Добавляем flex */
-    flex-direction: column; /* Элементы внутри идут столбиком */
-    gap: 10px;
-    flex-grow: 1;
-    overflow-y: auto; /* Прокрутка для этого блока */
-    padding: 0 5px 10px 0; /* Добавляем padding снизу */
-    margin-bottom: 0; /* Убираем отступ снизу отсюда */
-}
 
 /* Стили для контейнера меню параметров кухни */
 .kitchen-params-menu {

@@ -5,7 +5,7 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Конструктор мебели</title>
-    <script type="module" src="script.js"></script>
+    
     <script type="importmap">
         {
           "imports": {
@@ -19,10 +19,10 @@
 <body>
     <div id="topMenu">
         <button class="top-btn" onclick="undoLastAction()">Undo</button>
-        <button class="top-btn" onclick="setLeftView()">Left</button>
-        <button class="top-btn" onclick="setFrontView()">Front</button>
-        <button class="top-btn" onclick="setTopView()">Top</button>
-        <button class="top-btn" onclick="setIsometricView()">3D</button>
+        <button class="top-btn" id="leftViewButton">Left</button>
+        <button class="top-btn" id="frontViewButton">Front</button>
+        <button class="top-btn" id="topViewButton">Top</button>
+        <button class="top-btn" id="isometricViewButton">3D</button>
         <button class="top-btn" onclick="saveProject()">Save</button>
         <button class="top-btn" onclick="loadProject()">Load</button>
     </div>
@@ -32,7 +32,7 @@
             <label>Высота (мм):</label><input type="number" id="height" value="2600" min="100" max="10000"><br>
             <label>Глубина (мм):</label><input type="number" id="width" value="2500" min="100" max="10000"><br>
             <label>Цвет:</label><input type="color" id="cubeColor" value="#d3d3d3"><br>
-            <button onclick="applySize()">Применить</button>
+            <button id="applySizeButton">Применить</button>
             <button id="kitchenParamsButton">Общие параметры кухни</button>
         </div>
         <div id="wallEditMenu">
@@ -89,6 +89,6 @@
         </div>
     </div>
     <div id="hint-bar"></div>
-    
+    <script type="module" src="script.js"></script>
 </body>
 </html>

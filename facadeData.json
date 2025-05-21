@@ -87,15 +87,24 @@
       "decors": [
           { "value": "BM01", "text": "BM01", "displayColor": "#FCFDF5", "previewImage": null },
           { "value": "BM02", "text": "BM02", "displayColor": "#F5ECE3", "previewImage": null },
-          { "value": "BM03", "text": "BM03", "displayColor": "#A49A89", "previewImage": null },
+          { "value": "BM03", "text": "BM03", "displayColor": "#92857D", "previewImage": null },
           { "value": "BM04", "text": "BM04", "displayColor": "#474843", "previewImage": null },
           { "value": "BM05", "text": "BM05", "displayColor": "#838683", "previewImage": null },
-          { "value": "BM06", "text": "BM06", "displayColor": "#B5AF9F", "previewImage": null },
+          { "value": "BM06", "text": "BM06", "displayColor": "#C7C6C4", "previewImage": null },
           { "value": "BM07", "text": "BM07", "displayColor": "#D7CCBB", "previewImage": null },
           { "value": "BM08", "text": "BM08", "displayColor": "#78716B", "previewImage": null },
           { "value": "BM09", "text": "BM09", "displayColor": "#676F6C", "previewImage": null },
           { "value": "BM10", "text": "BM10", "displayColor": "#070707", "previewImage": null },
-          { "value": "BM11", "text": "BM11", "displayColor": "#FEFEFE", "previewImage": null }
+          { "value": "BM11", "text": "BM11", "displayColor": "#FEFEFE", "previewImage": null },
+          { "value": "BM12", "text": "BM12", "displayColor": "#914B27", "previewImage": null },
+          { "value": "BM13", "text": "BM13", "displayColor": "#A1AC9C", "previewImage": null },
+          { "value": "BM14", "text": "BM14", "displayColor": "#28292B", "previewImage": null },
+          { "value": "BM15", "text": "BM15", "displayColor": "#481B22", "previewImage": null },
+          { "value": "BM16", "text": "BM16", "displayColor": "#C5BEB5", "previewImage": null },
+          { "value": "BM17", "text": "BM17", "displayColor": "#E5DCCB", "previewImage": null },
+          { "value": "BM18", "text": "BM18", "displayColor": "#B3A898", "previewImage": null },
+          { "value": "BM19", "text": "BM19", "displayColor": "#AD9F94", "previewImage": null },
+          { "value": "BM20", "text": "BM20", "displayColor": "#90989E", "previewImage": null }
       ]
     },
     "fenix": {
@@ -131,9 +140,18 @@
           { "value": "ENGADINAS060", "text": "ENGADINA S060", "displayColor": "#CABEB0", "previewImage": "textures/previews/CLEAF/ENGADINA.jpg" },
           { "value": "CONCRETAFC36", "text": "CONCRETA FC36", "displayColor": "#A8A8A8", "previewImage": "textures/previews/CLEAF/CONCRETA.jpg" },
           { "value": "ARESFB48", "text": "ARES FB48", "displayColor": "#8C8A87", "previewImage": "textures/previews/CLEAF/ARES.jpg" },
-          { "value": "IDEAFB85", "text": "IDEA FB85*", "displayColor": "#6B635B", "previewImage": "textures/previews/CLEAF/IDEA.jpg" },
+          { "value": "IDEAFB82", "text": "IDEA FB82", "displayColor": "#6B635B", "previewImage": "textures/previews/CLEAF/Idea_FB82.jpg" },
           { "value": "MILLENNIUMU129", "text": "MILLENNIUM U129", "displayColor": "#AD957A", "previewImage": "textures/previews/CLEAF/MILLENNIUM.jpg" },
-          { "value": "YOSEMITES010", "text": "YOSEMITE S010 *", "displayColor": "#E0D7C9", "previewImage": "textures/previews/CLEAF/YOSEMITE.jpg" }
+          { "value": "YOSEMITES010", "text": "YOSEMITE S010", "displayColor": "#E0D7C9", "previewImage": "textures/previews/CLEAF/YOSEMITE.jpg" },
+          { "value": "SHERWOODS072", "text": "SHERWOOD S072", "displayColor": "#E0D7C8", "previewImage": "textures/previews/CLEAF/SHERWOOD.jpg" },
+          { "value": "PIOMBO00", "text": "PIOMBO HM00", "displayColor": "#DFDFDF", "previewImage": null },
+          { "value": "PIOMBO01", "text": "PIOMBO HM01", "displayColor": "#A69F95", "previewImage": null },
+          { "value": "PIOMBO02", "text": "PIOMBO HM02", "displayColor": "#A0A096", "previewImage": null },
+          { "value": "PIOMBO03", "text": "PIOMBO HM03", "displayColor": "#8B8273", "previewImage": null },
+          { "value": "PIOMBO04", "text": "PIOMBO HM04", "displayColor": "#65655B", "previewImage": null },
+          { "value": "PIOMBO05", "text": "PIOMBO HM05", "displayColor": "#343434", "previewImage": null },
+          { "value": "PIOMBO06", "text": "PIOMBO HM06", "displayColor": "#303030", "previewImage": null },
+          { "value": "PIOMBO07", "text": "PIOMBO HM07", "displayColor": "#0C0606", "previewImage": null }
       ]
     },
      "mdf_smooth": {
