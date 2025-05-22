@@ -46,7 +46,7 @@ directionalLight.shadow.camera.top = shadowCamSize;
 directionalLight.shadow.camera.bottom = -shadowCamSize;
 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.9; 
+renderer.toneMappingExposure = 1.4; 
 
 const rgbeLoader = new RGBELoader();
 rgbeLoader.setDataType(THREE.HalfFloatType); // Или THREE.FloatType, зависит от HDRI

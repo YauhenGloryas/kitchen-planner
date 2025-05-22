@@ -7317,17 +7317,14 @@ function applyKitchenParams() {
     saveState("updateKitchenParams", { description: "Изменение параметров кухни" });
 
     // --- Блок 1: Запоминаем детализированные и временно упрощаем ВСЕ в данных ---
-    const detailedCabinetInfo = []; // Сохраняем { uuid, index }
+    const detailedCabinetInfo = []; 
     cabinets.forEach((cabinet, index) => {
-        if (cabinet.isDetailed && cabinet.mesh && cabinet.mesh.isGroup) { // Проверяем, что это действительно группа
+        if (cabinet.isDetailed && cabinet.mesh && cabinet.mesh.isGroup) { 
             detailedCabinetInfo.push({ uuid: cabinet.mesh.uuid, index: index });
             console.log(`[applyKitchenParams] Блок 1: Обработка детализированного UUID ${cabinet.mesh.uuid}`);
-            // Временно меняем ТОЛЬКО флаг в данных. Не трогаем mesh здесь.
             cabinet.isDetailed = false;
-            // cabinet.mesh = null; // Пока не обнуляем mesh, он понадобится для получения позиции/вращения
-            cabinet.edges = null; // У детализированных нет глобальных ребер
+            cabinet.edges = null; 
         } else if (cabinet.isDetailed) {
-            // Если isDetailed=true, но mesh не группа, сбрасываем флаг
             console.warn(`[applyKitchenParams] Блок 1: Шкаф ${index} isDetailed, но mesh не группа:`, cabinet.mesh);
             cabinet.isDetailed = false;
         }
@@ -7335,7 +7332,7 @@ function applyKitchenParams() {
     console.log(`[applyKitchenParams] Запомнено ${detailedCabinetInfo.length} детализированных шкафов для восстановления:`, JSON.parse(JSON.stringify(detailedCabinetInfo)));
 
     // --- Блок 2: Обновление kitchenGlobalParams ---
-    try { // Обернем получение значений в try...catch
+    try { 
         kitchenGlobalParams.countertopHeight = parseFloat(document.getElementById('countertopHeight').value) || kitchenGlobalParams.countertopHeight;
         kitchenGlobalParams.countertopThickness = parseFloat(document.getElementById('countertopThickness').value) || kitchenGlobalParams.countertopThickness;
         kitchenGlobalParams.plinthHeight = parseFloat(document.getElementById('plinthHeight').value) || kitchenGlobalParams.plinthHeight;
@@ -7345,47 +7342,37 @@ function applyKitchenParams() {
         kitchenGlobalParams.countertopType = document.getElementById('countertopType').value;
         kitchenGlobalParams.handleType = document.getElementById('handleType').value;
         kitchenGlobalParams.kitchenType = document.getElementById('kitchenType').value;
-        kitchenGlobalParams.golaMinHeightMm = parseFloat(document.getElementById('golaMinHeightMm').value) || kitchenGlobalParams.golaMinHeightMm; // Считываем новое значение
-        // Ограничиваем значение Гола
+        kitchenGlobalParams.golaMinHeightMm = parseFloat(document.getElementById('golaMinHeightMm').value) || kitchenGlobalParams.golaMinHeightMm; 
         kitchenGlobalParams.golaMinHeightMm = Math.max(3, Math.min(50, kitchenGlobalParams.golaMinHeightMm));
     } catch (e) {
         console.error("Ошибка при чтении параметров из DOM в applyKitchenParams:", e);
-        // Можно прервать выполнение или использовать старые значения
-        return; // Прерываем, если не смогли прочитать параметры
+        return; 
     }
     console.log("Глобальные параметры кухни обновлены.");
 
     // --- Блок 3: Пересчёт размеров/позиций ВСЕХ шкафов в данных ---
     console.log("[applyKitchenParams] Рассчитанные позиции для шкафов:");
     cabinets.forEach((cabinet, cabIndex_for_log) => {
-        // ... (вставьте сюда вашу логику расчета cabinet.height, cabinet.offsetBottom и т.д.)
-        //console.log(`  Шкаф (${cabinet.id_data}): calculatedPosition=`, cabinet.calculatedPosition, `isDetailed был?`);
         if (cabinet.cabinetConfig === 'falsePanel') {
-            // --- СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ ФАЛЬШ-ПАНЕЛИ ---
             console.log(`  [applyKParams_FP] Пересчет для фальш-панели ID: ${cabinet.id_data || cabinet.mesh?.uuid}`);
             const fpHeightOption = cabinet.fp_height_option || 'cabinetHeight';
             const fpVerticalAlign = cabinet.fp_vertical_align || 'cabinetBottom';
-            // fp_offset_from_floor и fp_custom_height уже должны быть в метрах в cabinetData
 
-            // 1. Рассчитываем cabinet.offsetBottom для ФП
             if (fpVerticalAlign === 'floor') {
                 cabinet.offsetBottom = cabinet.fp_offset_from_floor !== undefined ? cabinet.fp_offset_from_floor : 0.0;
-            } else { // cabinetBottom
+            } else { 
                 cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
             }
-            console.log(`    [applyKParams_FP] fpVerticalAlign=${fpVerticalAlign}, new offsetBottom=${cabinet.offsetBottom.toFixed(3)}`);
+            // cabinet.offsetBottom = Math.max(0, cabinet.offsetBottom || 0); // Ensure non-negative
 
-            // 2. Рассчитываем cabinet.height для ФП
-            let calculatedFPHeightM = cabinet.height; // Начинаем с текущей, на случай если freeHeight и не изменится
+            let calculatedFPHeightM = cabinet.height; 
             switch (fpHeightOption) {
                 case 'cabinetHeight':
-                    // Высота от нового cabinet.offsetBottom до низа столешницы
                     calculatedFPHeightM = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (cabinet.offsetBottom * 1000)) / 1000;
                     cabinet.isHeightIndependent = false;
                     break;
                 case 'toGola':
                     const availableForGolaMm_FP = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (cabinet.offsetBottom * 1000);
-                    // Высота "ящика" для расчета Гола - это стандартная высота нижнего шкафа
                     const boxHeightForGolaCalc_FP = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight;
                     const golaHeightM_FP = calculateActualGolaHeight(
                         kitchenGlobalParams.golaMinHeightMm, 
@@ -7397,93 +7384,62 @@ function applyKitchenParams() {
                     break;
                 case 'kitchenHeight':
                     calculatedFPHeightM = (kitchenGlobalParams.totalHeight / 1000) - cabinet.offsetBottom;
-                    cabinet.isHeightIndependent = true; // Зависит от totalHeight, но не от столешницы
+                    cabinet.isHeightIndependent = true; 
                     break;
                 case 'freeHeight':
-                    // Высота берется из cabinet.fp_custom_height (если оно есть) или остается текущая cabinet.height
-                    // fp_custom_height должно было быть установлено при настройке ФП
                     if (cabinet.fp_custom_height !== undefined) {
                         calculatedFPHeightM = cabinet.fp_custom_height;
-                    } else {
-                        // Если fp_custom_height не задан, возможно, стоит сбросить на какой-то дефолт или cabinetHeight
-                        // console.warn(`  [applyKParams_FP] fp_height_option='freeHeight', но fp_custom_height не определен. Используется текущая высота.`);
                     }
                     cabinet.isHeightIndependent = true;
                     break;
             }
-            cabinet.height = Math.max(0.050, calculatedFPHeightM); // Мин. высота 50мм
+            cabinet.height = Math.max(0.050, calculatedFPHeightM || 0.050); // Clamp and ensure non-NaN
             console.log(`    [applyKParams_FP] fpHeightOption=${fpHeightOption}, new height=${cabinet.height.toFixed(3)}`);
 
-            // Размеры W и D для ФП (особенно для narrow/decorative) зависят от facadeThickness
-            // и сохраненного cabinet.fp_depth (для narrow/decorative) или cabinet.width/depth (для wide)
-            // Их нужно тоже перепроверить, если panelThicknessMm или facadeSet изменились
             if (cabinet.fp_type === 'narrow' || cabinet.fp_type === 'decorativePanel') {
                  const { thickness: facadeThicknessM_FP } = getFacadeMaterialAndThickness(cabinet);
-                 cabinet.width = facadeThicknessM_FP; // Ширина узкой ФП = толщина фасада
-                 // cabinet.depth (глубина узкой ФП) остается той, что была настроена,
-                 // или если она должна меняться, то как?
+                 cabinet.width = facadeThicknessM_FP; 
             }
-            // Для 'wideLeft'/'wideRight' width и depth (корпусной части) обычно фиксированы или настраиваются в другом месте.
-
         } else if (cabinet.type === 'lowerCabinet' && !cabinet.isHeightIndependent) {
             cabinet.height = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+            cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
             cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
             cabinet.offsetFromParentWall = calculateLowerCabinetOffset(cabinet);
         } else if (cabinet.type === 'upperCabinet') {
-            if (cabinet.isMezzanine == 'normal') { /*...*/ cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight) / 1000; cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; }
-            else if (cabinet.isMezzanine == 'mezzanine') { /*...*/ cabinet.height = kitchenGlobalParams.mezzanineHeight / 1000; cabinet.offsetBottom = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.mezzanineHeight) / 1000; }
-            else if (cabinet.isMezzanine == 'underMezzanine') { /*...*/ cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight - kitchenGlobalParams.mezzanineHeight) / 1000; cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; }
+            if (cabinet.isMezzanine == 'normal') { 
+                cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight) / 1000; 
+                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
+                cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; 
+            } else if (cabinet.isMezzanine == 'mezzanine') { 
+                cabinet.height = kitchenGlobalParams.mezzanineHeight / 1000; 
+                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
+                cabinet.offsetBottom = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.mezzanineHeight) / 1000; 
+            } else if (cabinet.isMezzanine == 'underMezzanine') { 
+                cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight - kitchenGlobalParams.mezzanineHeight) / 1000; 
+                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
+                cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; 
+            }
         } else if (cabinet.isHeightIndependent && cabinet.type !== 'freestandingCabinet') {
             cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.plinthHeight) / 1000;
+            cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
             cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
         }
-        // --- Конец логики расчета ---
 
-                // --- ТЕПЕРЬ рассчитываем calculatedPosition и calculatedRotation ---
-        // Проверяем, был ли этот шкаф в списке изначально детализированных
-        const originalDetailDataForThisCab = detailedCabinetInfo.find(info => info.index === cabIndex_for_log);
-
-        if (originalDetailDataForThisCab) { 
-            // Этот шкаф БЫЛ детализирован, его cabinet.mesh сейчас null (установлен в Блоке 1)
-            console.log(`    [applyKParams PosCalc - ${cabIndex_for_log}] Шкаф (был UUID ${originalDetailDataForThisCab.uuid}) был детализирован. Расчет позиции через tempMesh.`);
-            const tempMesh = new THREE.Mesh(new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth));
-            // Важно: не присваивать cabinet.mesh = tempMesh глобально, используем его только для updateCabinetPosition
-            // updateCabinetPosition должен уметь принять меш как аргумент или работать с временной заменой
-            
-            // Сохраняем текущее (null) значение cabinet.mesh
-            const actualCurrentMesh = cabinet.mesh; 
-            cabinet.mesh = tempMesh; // Временно подставляем tempMesh для updateCabinetPosition
-
-            updateCabinetPosition(cabinet); // Эта функция обновит tempMesh.position и tempMesh.rotation
-
-            cabinet.calculatedPosition = tempMesh.position.clone(); 
-            cabinet.calculatedRotation = tempMesh.rotation.clone(); 
-            
-            cabinet.mesh = actualCurrentMesh; // Возвращаем старое значение mesh (null)
-            tempMesh.geometry.dispose(); // Очищаем временную геометрию
-        } else if (cabinet.mesh) { 
-            // Это простой шкаф (не был в detailedCabinetInfo) И у него есть меш
-            console.log(`    [applyKParams PosCalc - ${cabIndex_for_log}] Простой шкаф (${cabinet.id_data || cabinet.mesh.uuid}). Обновление позиции существующего меша.`);
-            updateCabinetPosition(cabinet); // Обновляем позицию ЕГО СОБСТВЕННОГО МЕША
-            cabinet.calculatedPosition = cabinet.mesh.position.clone();
-            cabinet.calculatedRotation = cabinet.mesh.rotation.clone();
-        } else {
-            // Этот случай не должен происходить, если все шкафы либо были детализированы (и попали в originalDetailData),
-            // либо являются простыми и имеют .mesh.
-            console.warn(`  [applyKParams PosCalc - ${cabIndex_for_log}] У шкафа (${cabinet.id_data}) нет меша и он не был в списке детализированных. Позиция не рассчитана корректно.`);
-            cabinet.calculatedPosition = new THREE.Vector3(0,0,0); 
-            cabinet.calculatedRotation = new THREE.Euler();   
+        if (cabinet.mesh) { 
+            updateCabinetPosition(cabinet);
         }
-        console.log(`  [applyKParams Блок 3 - ${cabIndex_for_log}] FINISHED: ID: ${cabinet.id_data}, calculatedPosition:`, cabinet.calculatedPosition, `Был детальным? ${!!originalDetailDataForThisCab}`);
     });
     console.log("[applyKitchenParams] Данные (размеры/позиции) шкафов обновлены.");
 
     // --- Блок 3.5 - Обновление столешниц ---
-    // ... (Ваш код обновления столешниц остается без изменений) ...
      console.log("Обновление столешниц...");
+     let newGlobalCountertopThickness = kitchenGlobalParams.countertopThickness / 1000;
+     newGlobalCountertopThickness = Math.max(0.01, newGlobalCountertopThickness || 0.01); // CLAMP
+
      const newGlobalCountertopHeightFromFloor = kitchenGlobalParams.countertopHeight / 1000;
-     const newGlobalCountertopThickness = kitchenGlobalParams.countertopThickness / 1000;
-     const roomHeightMeters = currentWidth; const floorY = -roomHeightMeters / 2;
+     const roomHeightMeters = currentWidth; 
+     const floorY = -roomHeightMeters / 2;
+
      countertops.forEach(countertop => {
           if (!countertop || !countertop.userData) return;
           if (countertop.userData.heightDependsOnGlobal !== false) {
@@ -7491,54 +7447,40 @@ function applyKitchenParams() {
               const newCenterY = floorY + centerRelativeToFloor;
               countertop.position.y = newCenterY;
           }
-          const currentLength = countertop.userData.length;
-          const currentDepth = countertop.userData.depth;
+
           const needsGeometryUpdate = Math.abs(countertop.userData.thickness - newGlobalCountertopThickness) > 1e-5;
           if (needsGeometryUpdate) {
             console.log(` - Обновление геометрии для ${countertop.uuid}: толщина=${newGlobalCountertopThickness}`);
-            countertop.userData.thickness = newGlobalCountertopThickness; // Обновляем толщину в данных
-
-            // Очищаем старую геометрию
+            countertop.userData.thickness = newGlobalCountertopThickness; 
             if (countertop.geometry) countertop.geometry.dispose();
 
-            // Создаем новую геометрию с АКТУАЛЬНЫМИ размерами и НОВОЙ толщиной
-            countertop.geometry = new THREE.BoxGeometry(
-                countertop.userData.length,
-                newGlobalCountertopThickness, // Новая толщина
-                countertop.userData.depth
-            );
+            const l_ct = Math.max(0.01, countertop.userData.length || 0.01); // CLAMP
+            const t_ct = newGlobalCountertopThickness; // Already clamped
+            const d_ct = Math.max(0.01, countertop.userData.depth || 0.01); // CLAMP
+            console.log(`[applyKitchenParams] PRE-GEOMETRY COUNTERTOP ${countertop.uuid || countertop.userData.id_data}: Original LTD: [${countertop.userData.length}, ${newGlobalCountertopThickness}, ${countertop.userData.depth}]. Clamped LTD: [${l_ct}, ${t_ct}, ${d_ct}]`);
+            
+            countertop.geometry = new THREE.BoxGeometry(l_ct, t_ct, d_ct); // USE CLAMPED
 
-            // Обновляем геометрию ребер, если они есть
-            if (countertop.userData.edges?.geometry) { // Безопасный доступ
+            if (countertop.userData.edges?.geometry) { 
                 countertop.userData.edges.geometry.dispose();
-                // Создаем ребра на основе НОВОЙ геометрии столешницы
                 countertop.userData.edges.geometry = new THREE.EdgesGeometry(countertop.geometry);
             }
         }
 
-        // 1. Очищаем старый материал(ы)
         if (countertop.material) {
             if (Array.isArray(countertop.material)) {
-                countertop.material.forEach(m => m?.dispose()); // Безопасно очищаем каждый материал в массиве
+                countertop.material.forEach(m => m?.dispose()); 
             } else {
-                countertop.material?.dispose(); // Безопасно очищаем одиночный материал
+                countertop.material?.dispose(); 
             }
         }
-
-        // 2. Создаем НОВЫЙ материал с АКТУАЛЬНЫМИ параметрами
         const newMaterial = createCountertopMaterial({
-            materialType: countertop.userData.materialType,        // Текущий тип материала столешницы (oak, stone, solid)
-            solidColor: countertop.userData.solidColor || '#808080', // Текущий цвет столешницы
-            textureType: kitchenGlobalParams.countertopType          // *** Используем АКТУАЛЬНЫЙ глобальный тип ***
+            materialType: countertop.userData.materialType,        
+            solidColor: countertop.userData.solidColor || '#808080', 
+            textureType: kitchenGlobalParams.countertopType          
         });
-
-        // 3. Назначаем новый материал
         countertop.material = newMaterial;
-
-        // 4. Обновляем масштаб текстуры (если применимо)
-        updateTextureScale(countertop); // Вызываем всегда после обновления материала
-
-        // 5. Устанавливаем флаг needsUpdate для материала (на всякий случай)
+        updateTextureScale(countertop); 
         if (Array.isArray(countertop.material)) {
             countertop.material.forEach(m => { if(m) m.needsUpdate = true; });
         } else if (countertop.material) {
@@ -7547,82 +7489,100 @@ function applyKitchenParams() {
      });
      console.log("Столешницы обновлены.");
 
-
     // --- Блок 4: Обновляем 3D-представление шкафов ---
     console.log("Обновление 3D представления шкафов...");
     cabinets.forEach((cabinet, index) => {
         const isOriginallyDetailed = detailedCabinetInfo.some(info => info.index === index);
 
-        if (!cabinet.mesh) {
-            console.warn(`Шкаф с индексом ${index} не имеет меша. Пропускаем обновление 3D.`);
-            return;
+        if (!cabinet.mesh && !isOriginallyDetailed) { // If simple and no mesh, might be an issue
+             console.warn(`Простой шкаф (индекс ${index}, ID ${cabinet.id_data}) не имеет меша перед обновлением 3D. Попытка создать.`);
+             // Attempt to create a mesh if it's missing for a simple cabinet
+             cabinet.mesh = new THREE.Mesh(
+                 new THREE.BoxGeometry(Math.max(0.01, cabinet.width || 0.01), Math.max(0.01, cabinet.height || 0.01), Math.max(0.01, cabinet.depth || 0.01)),
+                 new THREE.MeshStandardMaterial({ color: cabinet.initialColor || '#FF00FF' }) // Default to magenta if color missing
+             );
+             cabinet.mesh.uuid = cabinet.id_data || THREE.MathUtils.generateUUID(); // Assign UUID
+             // Add edges for this newly created mesh
+             const edgesGeom = new THREE.EdgesGeometry(cabinet.mesh.geometry);
+             cabinet.edges = new THREE.LineSegments(edgesGeom, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
+             cabinet.edges.raycast = () => {};
+             cabinet.mesh.add(cabinet.edges);
+             updateCabinetPosition(cabinet); // Position it
+             cube.add(cabinet.mesh); // Add to scene
+        } else if (!cabinet.mesh && isOriginallyDetailed) {
+             console.warn(`Детализированный шкаф (индекс ${index}, ID ${cabinet.id_data}) не имеет ссылки на mesh (должна быть старая группа). Восстановление может быть неточным.`);
+             // This case is problematic, as we need the old mesh's transform for newDetailedGroup
         }
 
-        if (isOriginallyDetailed) {
-            // --- Восстанавливаем детализацию ---
-            console.log(`Восстановление детализации для индекса ${index}, UUID ${cabinet.mesh.uuid}`);
-            const oldGroup = cabinet.mesh; // Ссылка на старую группу (или временный меш, если был сбой)
 
-            const newDetailedGroup = getDetailedCabinetRepresentation(cabinet); // Создаем НОВУЮ группу с НОВЫМИ размерами
+        if (isOriginallyDetailed) {
+            console.log(`Восстановление детализации для индекса ${index}, исходный UUID предполагаемой группы: ${detailedCabinetInfo.find(info=>info.index===index)?.uuid}`);
+            const oldGroup = detailedCabinetInfo.find(info=>info.index===index)?.oldMesh || cabinet.mesh; // Use oldMesh if available
+
+            const newDetailedGroup = getDetailedCabinetRepresentation(cabinet); 
 
             if (newDetailedGroup) {
-                newDetailedGroup.uuid = oldGroup.uuid; // Восстанавливаем UUID
-                // Копируем позицию/вращение/масштаб из объекта, обновленного updateCabinetPosition
-                newDetailedGroup.position.copy(oldGroup.position);
-                newDetailedGroup.rotation.copy(oldGroup.rotation);
-                newDetailedGroup.scale.copy(oldGroup.scale);
+                if (oldGroup) newDetailedGroup.uuid = oldGroup.uuid; // Restore UUID from old group if possible
+                else newDetailedGroup.uuid = cabinet.id_data || THREE.MathUtils.generateUUID(); // Fallback UUID
 
-                // Удаляем старый объект из сцены и очищаем его ресурсы
-                if (oldGroup.parent) oldGroup.parent.remove(oldGroup);
-                oldGroup.traverse((child) => { /* ... код очистки dispose() ... */
-                     if (child.isMesh || child.isLineSegments) {
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (Array.isArray(child.material)) child.material.forEach(m => m?.dispose());
-                            else child.material?.dispose();
-                        }
-                     }
-                });
-
-                cabinet.mesh = newDetailedGroup; // Обновляем ссылку
-                cabinet.isDetailed = true;       // Восстанавливаем флаг
+                if (oldGroup) { // If we have the old group/mesh reference
+                    newDetailedGroup.position.copy(oldGroup.position);
+                    newDetailedGroup.rotation.copy(oldGroup.rotation);
+                    newDetailedGroup.scale.copy(oldGroup.scale);
+                    if (oldGroup.parent) oldGroup.parent.remove(oldGroup);
+                    oldGroup.traverse((child) => { 
+                         if (child.isMesh || child.isLineSegments) {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) {
+                                if (Array.isArray(child.material)) child.material.forEach(m => m?.dispose());
+                                else child.material?.dispose();
+                            }
+                         }
+                    });
+                } else { // Fallback if oldGroup reference was lost
+                    updateCabinetPosition(cabinet); // Calculate position based on cabinet data
+                    newDetailedGroup.position.set(cabinet.calculatedPosition.x, cabinet.calculatedPosition.y, cabinet.calculatedPosition.z);
+                    newDetailedGroup.rotation.set(cabinet.calculatedRotation.x, cabinet.calculatedRotation.y, cabinet.calculatedRotation.z);
+                }
+                
+                cabinet.mesh = newDetailedGroup; 
+                cabinet.isDetailed = true;       
                 cabinet.edges = null;
-                cube.add(newDetailedGroup);      // Добавляем новую группу в сцену
-                //console.log(` - Детализация для ${newDetailedGroup.uuid} восстановлена.`);
+                cube.add(newDetailedGroup);      
             } else {
                  console.error(`Не удалось воссоздать детализированную группу для индекса ${index}. Шкаф останется/станет простым.`);
-                 cabinet.isDetailed = false; // Сбрасываем флаг
-                 // Если старый объект был группой, нужно создать простой меш
-                 if (oldGroup.isGroup) {
+                 cabinet.isDetailed = false; 
+                 if (oldGroup && oldGroup.isGroup) {
                      if (oldGroup.parent) oldGroup.parent.remove(oldGroup);
-                     oldGroup.traverse((child) => { /* ... код очистки dispose() ... */ });
-                     // Создаем простой меш
-                     cabinet.mesh = new THREE.Mesh( new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth), new THREE.MeshStandardMaterial({ color: cabinet.initialColor }) );
+                     oldGroup.traverse((child) => { /* ... dispose ... */ });
+                     cabinet.mesh = new THREE.Mesh( new THREE.BoxGeometry(Math.max(0.01, cabinet.width || 0.01), Math.max(0.01, cabinet.height || 0.01), Math.max(0.01, cabinet.depth || 0.01)), new THREE.MeshStandardMaterial({ color: cabinet.initialColor }) );
                      cabinet.mesh.uuid = oldGroup.uuid;
-                     // ... добавляем ребра ...
                       const edgesGeom = new THREE.EdgesGeometry(cabinet.mesh.geometry);
                       cabinet.edges = new THREE.LineSegments(edgesGeom, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
                       cabinet.edges.raycast = () => {}; cabinet.mesh.add(cabinet.edges);
-                     // Устанавливаем позицию/вращение
                      cabinet.mesh.position.copy(oldGroup.position); cabinet.mesh.rotation.copy(oldGroup.rotation); cabinet.mesh.scale.copy(oldGroup.scale);
                      cube.add(cabinet.mesh);
-                 } else {
-                      // Если старый объект УЖЕ был простым мешем (из-за сбоя в 1 блоке), просто обновляем геометрию
+                 } else if (cabinet.mesh) { // If it became a simple mesh somehow
                       if (cabinet.mesh.geometry) cabinet.mesh.geometry.dispose();
-                      cabinet.mesh.geometry = new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth);
+                      cabinet.mesh.geometry = new THREE.BoxGeometry(Math.max(0.01, cabinet.width || 0.01), Math.max(0.01, cabinet.height || 0.01), Math.max(0.01, cabinet.depth || 0.01));
                       if (cabinet.edges?.geometry) { cabinet.edges.geometry.dispose(); cabinet.edges.geometry = new THREE.EdgesGeometry(cabinet.mesh.geometry); }
                  }
             }
-        } else {
-            // --- Обновляем простой шкаф ---
-             console.log(`Обновление простого шкафа ${cabinet.mesh.uuid}`);
+        } else if (cabinet.mesh) { // Update for simple cabinet
+             console.log(`Обновление простого шкафа ${cabinet.id_data || cabinet.mesh.uuid}`);
              if (cabinet.mesh.geometry) cabinet.mesh.geometry.dispose();
-             cabinet.mesh.geometry = new THREE.BoxGeometry(cabinet.width, cabinet.height, cabinet.depth);
+
+             const w = Math.max(0.01, cabinet.width || 0.01); // CLAMP
+             const h = Math.max(0.01, cabinet.height || 0.01); // CLAMP
+             const d = Math.max(0.01, cabinet.depth || 0.01); // CLAMP
+             console.log(`[applyKitchenParams] PRE-GEOMETRY SIMPLE cabinet ${cabinet.id_data || cabinet.mesh.uuid}: Original WHD: [${cabinet.width}, ${cabinet.height}, ${cabinet.depth}]. Clamped WHD: [${w}, ${h}, ${d}]`);
+             
+             cabinet.mesh.geometry = new THREE.BoxGeometry(w, h, d); // USE CLAMPED
+
              if (cabinet.edges?.geometry) {
                  cabinet.edges.geometry.dispose();
                  cabinet.edges.geometry = new THREE.EdgesGeometry(cabinet.mesh.geometry);
              }
-             // Цвет пересечения
              const hasIntersection = checkCabinetIntersections(cabinet);
              if(cabinet.mesh.material){
                  cabinet.mesh.material.color.set(hasIntersection ? 0xff0000 : cabinet.initialColor);
@@ -7633,11 +7593,10 @@ function applyKitchenParams() {
     });
     console.log("3D представление шкафов обновлено.");
 
-
     // --- Блок 5: Финальные шаги ---
-    selectedCabinets = []; // Сбрасываем выделение
+    selectedCabinets = []; 
     selectedCabinet = null;
-    scene.updateMatrixWorld(true); // Обновляем матрицы
+    scene.updateMatrixWorld(true); 
 
     const menu = document.getElementById('kitchenParamsMenu');
     if (menu) menu.remove();
@@ -8730,7 +8689,7 @@ function getFacadeMaterialAndThickness(cabinetData) {
                 );
                 facadeMaterial = new THREE.MeshStandardMaterial({  
                      map: texture,
-                     color: new THREE.Color(0x909090),
+                     color: new THREE.Color(0xBBBBBB),
                      name: `Facade_${setData.materialType}_${setData.texture}`,
                      // --- Добавляем параметры ---
                      roughness: 0.8, // Немного шероховатости для текстур
