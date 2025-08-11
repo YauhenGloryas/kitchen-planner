@@ -25,6 +25,7 @@
         { "value": "H1181ST37", "text": "H1181 ST37 Дуб Галифакс табак", "displayColor": "#9A7C5E", "previewImage": "textures/previews/ЛДСП/H1181.jpg" },
         { "value": "H1344ST37", "text": "H1344 ST37 Дуб Шерман коньяк корич.", "displayColor": "#966F51", "previewImage": "textures/previews/ЛДСП/H1344.jpg" },
         { "value": "H1385ST40", "text": "H1385 ST40 Дуб Каселла натур.", "displayColor": "#D1B797", "previewImage": "textures/previews/ЛДСП/H1385.jpg" },
+        { "value": "H1386ST40", "text": "H1386 ST40 Дуб Каселла коричневый", "displayColor": "#7E644F", "previewImage": "textures/previews/ЛДСП/H1386.jpg" },
         { "value": "H3176ST37", "text": "H3176 ST37 Дуб Галифакс олово", "displayColor": "#A89A8C", "previewImage": "textures/previews/ЛДСП/H3176.jpg" },
         { "value": "H3317ST28", "text": "H3317 ST28 Дуб Кунео коричневый", "displayColor": "#7E644F", "previewImage": "textures/previews/ЛДСП/H3317.jpg" },
         { "value": "H3408ST38", "text": "H3408 ST38 Лиственница горная корич.", "displayColor": "#6F5440", "previewImage": "textures/previews/ЛДСП/H3408.jpg" },

@@ -40,6 +40,7 @@ import {
     // ... другие необходимые импорты ...
 } from './roomManager.js';
 
+
 // Также убедись, что у рендерера включены карты теней
 //renderer.shadowMap.enabled = true; // Добавь это при настройке renderer
 //renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Тип теней (опционально)
@@ -79,7 +80,8 @@ const gltfLoaderInstance_Preload = new GLTFLoader(); // Можно исполь�
 const modelsToPreload = [
     'oven_450.glb',
     'oven_600.glb',
-    // 'microwave_small.glb', // Добавьте сюда все нужные модели
+    'mkw_362.glb'
+ // Добавьте сюда все нужные модели
     // 'microwave_large.glb',
     // 'fridge_standard.glb',
 ];
@@ -107,6 +109,35 @@ const kitchenGlobalParams = {
     panelThicknessMm: 18, // <--- Толщина материала корпуса в мм
     golaMinHeightMm: 30 // <--- Новый параметр (значение по умолчанию 30 мм)
 };
+
+
+// ---- Render scheduler ----
+let renderRequested = false;
+let continuousRendering = false;
+
+function requestRender() {
+  if (!renderRequested) {
+    renderRequested = true;
+    requestAnimationFrame(renderFrame);
+  }
+}
+
+function setContinuousRendering(on) {
+  if (on && !continuousRendering) {
+    continuousRendering = true;
+    requestRender(); // стартуем цикл
+  } else if (!on) {
+    continuousRendering = false; // цикл затихнет сам после текущего кадра
+  }
+}
+
+function shouldContinue() {
+  const isRotatingNow = typeof isRotating !== 'undefined' && isRotating;
+  const isDraggingNow = typeof draggedCabinet !== 'undefined' && !!draggedCabinet;
+  const isPanningNow  = typeof isPanning  !== 'undefined' && isPanning;
+  return continuousRendering || isRotatingNow || isDraggingNow || isPanningNow;
+}
+
 
 /*
 const gltfLoader = new GLTFLoader();
@@ -2835,18 +2866,34 @@ function applyCabinetChanges(cabinetIndex) {
     // Эти значения могут переопределить дефолты, установленные clearCabinetConfig.
     if (newValuesFromCabinetMenu.width !== undefined) cabinet.width = newValuesFromCabinetMenu.width;
     if (newValuesFromCabinetMenu.depth !== undefined) cabinet.depth = newValuesFromCabinetMenu.depth;
-    if (newValuesFromCabinetMenu.height !== undefined) {
-         const heightInputDOM = cabinetMenuDOM.querySelector('#cabinetHeight');
-         if (heightInputDOM && !heightInputDOM.disabled) {
-            cabinet.height = newValuesFromCabinetMenu.height;
-            if ((cabinet.type === 'upperCabinet' || (cabinet.cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge', 'highDivider'].includes(cabinet.cabinetConfig)))) cabinet.isHeightIndependent = true;
-         }
+    // --- ОБРАБОТКА ВЫСОТЫ ИЗ ОСНОВНОГО МЕНЮ ---
+    const heightInputDOM = document.getElementById('cabinetHeight'); // Предполагаем, что это ID поля в cabinetMenu
+    if (heightInputDOM && !heightInputDOM.disabled && newValuesFromCabinetMenu.height !== undefined) {
+        cabinet.height = newValuesFromCabinetMenu.height;
+        // Если высота редактировалась для типа, который может иметь независимую высоту
+        const canBeIndependent = cabinet.type === 'upperCabinet' ||
+                                 cabinet.type === 'freestandingCabinet' ||
+                                 (cabinet.cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge', 'highDivider'].includes(cabinet.cabinetConfig)) ||
+                                 (cabinet.cabinetConfig === 'falsePanel' && cabinet.fp_height_option === 'freeHeight');
+        if (canBeIndependent) {
+            cabinet.isHeightIndependent = true;
+        }
     }
+    // --- КОНЕЦ ОБРАБОТКИ ВЫСОТЫ ---
     if (newValuesFromCabinetMenu.overhang !== undefined) cabinet.overhang = newValuesFromCabinetMenu.overhang;
     if (newValuesFromCabinetMenu.facadeGap !== undefined) cabinet.facadeGap = newValuesFromCabinetMenu.facadeGap;
 
     // --- Блок 3: Применение специфичных для типа шкафа параметров ---
     const wallId = cabinet.wallId; // WallId не меняется при этих операциях
+
+    // --- ПРИНУДИТЕЛЬНЫЙ ПЕРЕСЧЕТ ВЫСОТЫ ДЛЯ "ВЫСОКИХ" ШКАФОВ ПОСЛЕ ВСЕХ ПРИМЕНЕНИЙ ИЗ ОСНОВНОГО МЕНЮ ---
+    const isNowTallCabinet = (cabinet.cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge'].includes(cabinet.cabinetConfig));
+    if (isNowTallCabinet && !cabinet.isHeightIndependent) {
+        cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.plinthHeight) / 1000;
+        cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+        console.log(`[applyCabinetChanges] Высота для высокого шкафа '${cabinet.cabinetConfig}' принудительно установлена: ${cabinet.height} м`);
+    }
+    // -------------------------------------------------------------------------------------------------
 
     
 
@@ -2944,6 +2991,7 @@ function applyCabinetChanges(cabinetIndex) {
 
 function prepareCabinetForNewConfig(cabinet, oldConfig) {
     const newConfig = cabinet.cabinetConfig;
+    const newCabinetType = cabinet.cabinetType; // Получаем и тип конструкции
     console.log(`[prepareCabinetForNewConfig] Шкаф ID: ${cabinet.mesh?.uuid}. newConfig: '${newConfig}', oldConfig: '${oldConfig}'`);
 
     // 1. Общие сбросы, если уходим от конфигурации, где были специфичные вещи.
@@ -2961,6 +3009,8 @@ function prepareCabinetForNewConfig(cabinet, oldConfig) {
     }
     // ... и так далее для других "очисток" при смене КОНКРЕТНЫХ старых конфигов.
 
+        // --- Определение, является ли НОВАЯ конфигурация "высокой" ---
+    const isNewConfigTall = (newCabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge'].includes(newConfig));
     // 2. Установка дефолтов для НОВОЙ конфигурации (newConfig)
     //    Эти дефолты применяются, если свойство еще не установлено (undefined)
     //    ИЛИ если мы явно перешли с ДРУГОЙ конфигурации (oldConfig !== newConfig),
@@ -3011,6 +3061,29 @@ function prepareCabinetForNewConfig(cabinet, oldConfig) {
             cabinet.frontStretcher = (kitchenGlobalParams.handleType === 'gola-profile' && cabinet.stretcherDrop > 0) ? 'none' : 'horizontal';
         }
         if (cabinet.stretcherDrop === undefined || oldConfig !== 'drawers') cabinet.stretcherDrop = 0.0;
+    } else if (newConfig === 'tallOvenMicro') {
+        console.log(`  [PP_TOM] Установка/проверка дефолтов для 'tallOvenMicro'`);
+        if (cabinet.ovenType === undefined || oldConfig !== 'tallOvenMicro') cabinet.ovenType = '600';
+        if (cabinet.ovenLevel === undefined || oldConfig !== 'tallOvenMicro') cabinet.ovenLevel = 'drawer';
+        if (cabinet.microwaveType === undefined || oldConfig !== 'tallOvenMicro') cabinet.microwaveType = '362';
+        if (cabinet.underOvenFill === undefined || oldConfig !== 'tallOvenMicro') cabinet.underOvenFill = 'drawers';
+        if (cabinet.topShelves === undefined || oldConfig !== 'tallOvenMicro') cabinet.topShelves = '2';
+        // --- НОВЫЕ ДЕФОЛТЫ ---
+        if (cabinet.visibleSide === undefined || oldConfig !== 'tallOvenMicro') cabinet.visibleSide = 'none';
+        if (cabinet.verticalGolaProfile === undefined || oldConfig !== 'tallOvenMicro') cabinet.verticalGolaProfile = 'none';
+        if (cabinet.gapAboveTopFacadeMm === undefined || oldConfig !== 'tallOvenMicro') cabinet.gapAboveTopFacadeMm = 3; 
+        if (cabinet.ovenColor === undefined || oldConfig !== 'tallOvenMicro') cabinet.ovenColor = 'metallic'; 
+        cabinet.depth = 0.564; 
+        
+    } else if (newConfig === 'fridge') {
+        if (cabinet.fridgeType === undefined || oldConfig !== 'fridge') cabinet.fridgeType = 'double';
+        if (cabinet.shelvesAbove === undefined || oldConfig !== 'fridge') cabinet.shelvesAbove = '1';
+        if (cabinet.fridgeNicheHeightMm === undefined || oldConfig !== 'fridge') {
+            cabinet.fridgeNicheHeightMm = 1780; // Дефолт
+        }
+        if (cabinet.visibleSide === undefined || oldConfig !== 'fridge') cabinet.visibleSide = 'none';
+        if (cabinet.doorOpening === undefined || oldConfig !== 'fridge') cabinet.doorOpening = 'left';
+        if (cabinet.verticalGolaProfile === undefined || oldConfig !== 'fridge') cabinet.verticalGolaProfile = 'none';
     }
     // ... добавьте else if для других newConfig ...
     else {
@@ -3019,28 +3092,43 @@ function prepareCabinetForNewConfig(cabinet, oldConfig) {
         if (cabinet.rearStretcher === undefined) cabinet.rearStretcher = 'horizontal';
         if (cabinet.frontStretcher === undefined) cabinet.frontStretcher = 'horizontal';
         if (cabinet.stretcherDrop === undefined) cabinet.stretcherDrop = 0.0;
+        if (cabinet.freezerFacadeHeightMm === undefined || oldConfig !== 'fridge') cabinet.freezerFacadeHeightMm = 760;
+        if (cabinet.topFacade1HeightMm === undefined || oldConfig !== 'fridge') cabinet.topFacade1HeightMm = 0; // Будет пересчитан
+        if (cabinet.topFacade2HeightMm === undefined || oldConfig !== 'fridge') cabinet.topFacade2HeightMm = 0;
     }
 
     // 3. Дефолты для размеров и позиционирования (эта логика у вас уже есть и должна оставаться)
     //    Она применяется, если мы уходим от 'falsePanel' или если шкаф был "нулевой" по размерам.
-    if (newConfig !== 'falsePanel') {
-        if (oldConfig === 'falsePanel' || cabinet.width < 0.011) { // Сделал порог чуть больше 10мм
-            cabinet.width = (window.objectTypes?.lowerCabinet?.defaultWidth || 600) / 1000; // Берем из objectTypes
+    // --- Установка высоты и isHeightIndependent для НОВЫХ высоких шкафов ---
+    if (isNewConfigTall) {
+        // Если мы ПЕРЕХОДИМ на высокий тип, и высота еще не независима,
+        // или если это новый шкаф, который сразу стал высоким.
+        if (!cabinet.isHeightIndependent) {
+            cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.plinthHeight) / 1000;
+            cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+            // isHeightIndependent пока false, пользователь должен явно включить свободную высоту
+            console.log(`  [PP_TALL] Для высокого шкафа '${newConfig}' установлена расчетная высота: ${cabinet.height} м`);
+        } else {
+            // Если isHeightIndependent уже true (например, пользователь ранее установил свободную высоту
+            // для этой же конфигурации), оставляем текущую высоту.
+            console.log(`  [PP_TALL] Для высокого шкафа '${newConfig}' isHeightIndependent=true, высота остается ${cabinet.height} м`);
+        }
+    } else if (newConfig !== 'falsePanel') { // Для НЕ высоких и НЕ фальш-панелей
+        if (oldConfig === 'falsePanel' || cabinet.width < 0.011 ||
+            (oldConfig && ['tallStorage', 'tallOvenMicro', 'fridge'].includes(oldConfig) && !isNewConfigTall) // Если уходим с высокого на невысокий
+           ) {
+            cabinet.width = (window.objectTypes?.lowerCabinet?.defaultWidth || 600) / 1000;
             cabinet.depth = (window.objectTypes?.lowerCabinet?.defaultDepth || 520) / 1000;
             cabinet.overhang = (window.objectTypes?.lowerCabinet?.overhang || 18) / 1000;
-            console.log(`   - Установлены дефолтные W, D, Overhang для НЕ-ФП (был ФП или <11мм): ${newConfig}`);
         }
-
-        // Высота и offsetBottom (если не высокий шкаф или не верхний с независимой высотой)
-        if (!cabinet.isHeightIndependent && 
-            cabinet.type === 'lowerCabinet' && // Только для нижних стандартной высоты
-            !['tallStorage', 'tallOvenMicro', 'fridge'].includes(newConfig) // И не высоких конфигураций
+        // Высота и offsetBottom для стандартных нижних (если не высокий и не верхний)
+        if (!cabinet.isHeightIndependent &&
+            cabinet.type === 'lowerCabinet' &&
+            !isNewConfigTall // Явно проверяем, что новая конфигурация не высокая
            ) {
             cabinet.height = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
             cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
         }
-        // Для верхних шкафов высота управляется через isMezzanine и isHeightIndependent
-        // их высота и offsetBottom должны были быть установлены в applyChangesAndPrepareForConfigMenu или addUpperCabinet.
     }
     console.log(`[prepareCabinetForNewConfig] Финальный cabinet для '${newConfig}':`, JSON.parse(JSON.stringify(cabinet)));
 }
@@ -5676,6 +5764,7 @@ renderer.domElement.addEventListener('mousedown', (event) => {
 
                 // Начинаем перетаскивание (оригинала или клона)
                 startDraggingCabinet(cabinetToDrag, currentEvent, wasSelectedBeforeDrag);
+                setContinuousRendering(true); // 🔥 активируем рендер при перемещении шкафа
             };
 
             const checkDragStartMove = (moveEvent) => {
@@ -5715,6 +5804,8 @@ renderer.domElement.addEventListener('mousedown', (event) => {
             previousMouseX = event.clientX;
             previousMouseY = event.clientY;
             renderer.domElement.style.cursor = 'grabbing';
+
+            setContinuousRendering(true); // 🔁 рендерим пока вращаем
         }
     }
     // --- Обработка ПРАВОЙ кнопки мыши (event.button === 2) ---
@@ -5733,6 +5824,7 @@ renderer.domElement.addEventListener('mousedown', (event) => {
            previousPanY = event.clientY;
            renderer.domElement.style.cursor = 'grabbing'; // Или 'move'
 
+           setContinuousRendering(true); // 👀 рендерим пока панорамируем
             // --- Расчет точки панорамирования (panTarget) удаляем ---
 
         } else {
@@ -5745,39 +5837,31 @@ renderer.domElement.addEventListener('mousedown', (event) => {
 
 // Этот обработчик отвечает ТОЛЬКО за ОСТАНОВКУ ВРАЩЕНИЯ СЦЕНЫ
 document.addEventListener('mouseup', () => {
-    // Этот обработчик вызывается ВСЕГДА при отпускании ЛЮБОЙ кнопки мыши на документе
+  // Остановка вращения
+  if (isRotating) {
+    isRotating = false;
 
-    // Останавливаем вращение, если оно было активно
-    if (isRotating) {
-        //console.log("Mouseup (глобальный) - Остановка вращения."); // Лог
-        isRotating = false; // Сбрасываем флаг вращения
+    if (!draggedCabinet) {
+      renderer.domElement.style.cursor = 'default';
+    }
+  }
 
-        // Сбрасываем курсор, только если НЕ идет перетаскивание шкафа
-        // (onMouseUp для перетаскивания сам сбросит курсор)
-        if (!draggedCabinet) {
-            renderer.domElement.style.cursor = 'default'; // Возвращаем курсор по умолчанию
-            //console.log("Mouseup (глобальный) - Курсор сброшен (не было перетаскивания)."); // Лог
-        } else {
-            //console.log("Mouseup (глобальный) - Курсор НЕ сброшен (идет перетаскивание)."); // Лог
-        }
+  // Остановка панорамирования
+  if (isPanning) {
+    isPanning = false;
+    if (!isRotating && !draggedCabinet) {
+      renderer.domElement.style.cursor = 'default';
     }
-    // --- НАЧАЛО: Останавливаем панорамирование ---
-    if (isPanning) {
-        //console.log("Mouseup - Остановка панорамирования.");
-        isPanning = false;
-         // Сбрасываем курсор, только если не вращение и не перетаскивание
-        if (!isRotating && !draggedCabinet) {
-             renderer.domElement.style.cursor = 'default';
-        }
-    }
-    // --- КОНЕЦ: Останавливаем панорамирование ---
+  }
 
-    // В любом случае сбрасываем флаг потенциального перетаскивания,
-    // если вдруг он остался установлен после mousedown на шкафу без последующего drag
-    if (potentialDrag) {
-        //console.log("Mouseup (глобальный) - Сброс флага potentialDrag."); // Лог
-        potentialDrag = false;
-    }
+  // Сброс потенциального drag
+  if (potentialDrag) {
+    potentialDrag = false;
+  }
+
+  // 🆕 Вставляем после остановки всех действий:
+  setContinuousRendering(false);  // ⛔ отключаем цикл
+  requestRender();                // ✅ перерисовываем один кадр после взаимодействия
 });
 
 document.addEventListener('mousemove', (event) => {
@@ -5873,6 +5957,7 @@ document.addEventListener('mousemove', (event) => {
         // Обновляем предыдущие координаты для панорамирования
         previousPanX = event.clientX;
         previousPanY = event.clientY;
+        //requestRender();
 
         // Запрашиваем перерисовку, если не используется animate() постоянно
         // requestRenderIfNotRequested(); // Ваша функция запроса рендера
@@ -5943,6 +6028,7 @@ document.addEventListener('keydown', (event) => {
             } else {
                 applyRoomSize();
             }
+            requestRender();
             break;
         case 'z':
             if (event.ctrlKey) {
@@ -5963,7 +6049,7 @@ let lastOffsetX = null; // Для свободно стоящих шкафов
 let lastOffsetZ = null; // Для свободно стоящих шкафов
 
 // В script.js
-
+/*
 function animate() {
     // --- НАЧАЛО ИЗМЕНЕНИЯ: Проверка существования cube ---
     if (!cube) {
@@ -6082,6 +6168,95 @@ function animate() {
     // lastSelectedCabinet и lastCabinetsLength больше не используются в этой логике
 
 } // Конец animate
+*/
+
+function renderFrame() {
+  renderRequested = false;
+
+  if (!scene || !activeCamera) return;
+
+  if (cube) cube.updateMatrixWorld(true);
+  else scene.updateMatrixWorld(true);
+
+  if (typeof composer !== 'undefined' && composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, activeCamera);
+  }
+
+  // --- Обновление UI/оверлеев ---
+  const isRotatingNow = typeof isRotating !== 'undefined' && isRotating;
+  const isDraggingNow = typeof draggedCabinet !== 'undefined' && !!draggedCabinet;
+
+  const rotationChanged = cube ? (cube.rotation.y !== lastRotationY) : false;
+  let positionChanged = false;
+
+  if (selectedCabinets && selectedCabinets.length === 1) {
+    const selectedObject = selectedCabinets[0];
+    if (selectedObject) {
+      if (selectedObject.type === 'freestandingCabinet') {
+        positionChanged = lastOffsetX !== selectedObject.offsetX || lastOffsetZ !== selectedObject.offsetZ;
+      } else if (selectedObject.type && selectedObject.type !== 'countertop') {
+        positionChanged = lastOffsetAlongWall !== selectedObject.offsetAlongWall;
+      }
+    }
+  }
+
+  if (isDraggingNow && draggedCabinet) {
+    // updateDimensionsInputPosition(draggedCabinet, cabinets);
+  } else if (selectedCabinets && selectedCabinets.length === 1) {
+    const selectedObject = selectedCabinets[0];
+    if (selectedObject && (rotationChanged || positionChanged)) {
+      const isCountertop = selectedObject.userData?.type === 'countertop';
+      if (isCountertop) {
+        const wallId = selectedObject.userData.wallId;
+        if (wallId === 'Bottom') {
+          const roomL = currentLength; const roomD = currentHeight;
+          const ctRotY = selectedObject.rotation.y;
+          const axisIsX = (Math.abs(ctRotY) < 0.1 || Math.abs(Math.abs(ctRotY) - Math.PI) < 0.1);
+          const lb = axisIsX ? -roomL/2 : -roomD/2;
+          const rb = axisIsX ?  roomL/2 :  roomD/2;
+          updateFreestandingCountertopDimensionsPosition(selectedObject, lb, rb);
+        } else if (['Back', 'Front', 'Left', 'Right'].includes(wallId)) {
+          const {leftBoundary, rightBoundary} = findNearestObstacles(selectedObject, cabinets, countertops);
+          updateWallCountertopDimensionsPosition(selectedObject, leftBoundary, rightBoundary);
+        }
+      } else {
+        if (selectedObject.type === 'freestandingCabinet') {
+          showFreestandingCabinetDimensions(selectedObject, cabinets);
+        } else if (['lowerCabinet', 'upperCabinet'].includes(selectedObject.type)) {
+          showCabinetDimensionsInput(selectedObject, cabinets);
+        }
+        updateDimensionsInputPosition(selectedObject, cabinets);
+      }
+    }
+  }
+
+  if (cube) lastRotationY = cube.rotation.y;
+  if (selectedCabinets && selectedCabinets.length === 1) {
+    const selectedObject = selectedCabinets[0];
+    if (selectedObject) {
+      if (selectedObject.type === 'freestandingCabinet') {
+        lastOffsetX = selectedObject.offsetX;
+        lastOffsetZ = selectedObject.offsetZ;
+      } else if (selectedObject.type && selectedObject.type !== 'countertop') {
+        lastOffsetAlongWall = selectedObject.offsetAlongWall;
+      }
+    }
+  } else {
+    lastOffsetAlongWall = null;
+    lastOffsetX = null;
+    lastOffsetZ = null;
+  }
+
+  if (shouldContinue()) {
+    requestRender();
+  }
+}
+
+
+
+
 
 let facadeOptionsData = null; // Глобальная переменная для хранения данных
 
@@ -6110,7 +6285,7 @@ async function loadFacadeOptions() {
     }
 }
 
-
+/*
 async function init() { // <-- Делаем функцию асинхронной
     try { 
         // --- 0. Предварительная загрузка моделей ---
@@ -6206,6 +6381,96 @@ async function init() { // <-- Делаем функцию асинхронно�
         // Можно добавить здесь код для отображения сообщения об ошибке пользователю на странице
     }
 }
+*/
+
+async function init() {
+  try {
+    await preloadAllModels();
+
+    if (!allModelsLoaded && modelsToPreload.length > 0) {
+      console.error("Не все обязательные модели были загружены.");
+    }
+
+    initRenderer('canvasContainer');
+    initRoomManagerDOM();
+
+    const applySizeButton = document.getElementById('applySizeButton');
+    if (applySizeButton) {
+      applySizeButton.addEventListener('click', () => {
+        applyRoomSize();
+        requestRender(); // Обновляем после применения размеров
+      });
+    }
+
+    const leftButton = document.getElementById('leftViewButton');
+    if (leftButton) {
+      leftButton.addEventListener('click', () => {
+        setLeftView();
+        updateRendererAndPostprocessingCamera();
+        requestRender(); // После смены камеры
+      });
+    }
+
+    const frontButton = document.getElementById('frontViewButton');
+    if (frontButton) {
+      frontButton.addEventListener('click', () => {
+        setFrontView();
+        updateRendererAndPostprocessingCamera();
+        requestRender();
+      });
+    }
+
+    const topButton = document.getElementById('topViewButton');
+    if (topButton) {
+      topButton.addEventListener('click', () => {
+        setTopView();
+        updateRendererAndPostprocessingCamera();
+        requestRender();
+      });
+    }
+
+    const isometricButton = document.getElementById('isometricViewButton');
+    if (isometricButton) {
+      isometricButton.addEventListener('click', () => {
+        setIsometricView();
+        updateRendererAndPostprocessingCamera();
+        requestRender();
+      });
+    }
+
+    await loadFacadeOptions();
+    window.facadeSetsData = JSON.parse(localStorage.getItem('facadeSets')) || [];
+
+    let length = parseFloat(document.getElementById('length').value) || 3500;
+    let height = parseFloat(document.getElementById('height').value) || 2600;
+    let width = parseFloat(document.getElementById('width').value) || 2500;
+    const color = document.getElementById('cubeColor').value || '#d3d3d3';
+
+    length = Math.max(100, Math.min(10000, length)) / 1000;
+    height = Math.max(100, Math.min(10000, height)) / 1000;
+    width = Math.max(100, Math.min(10000, width)) / 1000;
+
+    createCube(length, height, width, color, THREE.MathUtils.degToRad(30), THREE.MathUtils.degToRad(-30));
+    if (!cube) {
+      throw new Error("Не удалось создать куб.");
+    }
+
+    requestRender(); // ⬅️ Первый старт рендера после подготовки сцены
+
+    if (typeof updateSelectedFaceDisplay === 'function') updateSelectedFaceDisplay();
+    if (typeof updateEdgeColors === 'function') updateEdgeColors();
+    if (typeof updateCountertopButtonVisibility === 'function') updateCountertopButtonVisibility();
+    if (typeof updateHint === 'function') updateHint("Конструктор готов к работе.");
+
+    if (typeof initDragAndDrop === 'function') initDragAndDrop();
+
+  } catch (error) {
+    console.error("!!! КРИТИЧЕСКАЯ ОШИБКА ИНИЦИАЛИЗАЦИИ:", error);
+    alert("Ошибка инициализации конструктора. Работа приложения может быть нарушена.");
+  }
+}
+
+
 
 //init();
 
@@ -6396,7 +6661,7 @@ function addCabinet(intersectPoint) {
         extraOffset: 0,
         ovenType: '600',
         ovenLevel: 'drawer',
-        microwaveType: '380',
+        microwaveType: '362',
         underOvenFill: 'drawers',
         topShelves: '2',
         fridgeType: 'double',
@@ -6410,7 +6675,12 @@ function addCabinet(intersectPoint) {
         //falsePanels: 'none',
         stretcherDrop: 0,
         facadeSet: 'set1',
-        highDividerDepth: 560,   //глубина вертикальной стойки-разделителя
+        //highDividerDepth: 560,   //глубина вертикальной стойки-разделителя
+        verticalGolaProfile: 'none',
+        gapAboveTopFacadeMm: 3, // Дефолтный зазор 3 мм - над верхним фасадом для высоких шкафов
+        fridgeNicheHeightMm: 1780, // Дефолтная высота ниши
+        freezerFacadeHeightMm: 760,
+        topFacade2HeightMm: 0,
         ovenColor: 'metallic'
     };
     obj.id_data = THREE.MathUtils.generateUUID();
@@ -7115,12 +7385,14 @@ function loadProject() {
                     if (typeof window.updateFaceBounds === 'function') window.updateFaceBounds();
                     if (typeof window.updateCountertopButtonVisibility === 'function') window.updateCountertopButtonVisibility();
                     updateHint("Проект загружен.");
+                    requestRender();
                     console.log("[loadProject] Загрузка проекта завершена.");
 
                 } catch (error) {
                     console.error("[loadProject] Ошибка при парсинге или обработке файла проекта:", error);
                     alert("Ошибка загрузки файла проекта. Файл поврежден или имеет неверный формат.");
                 }
+
             };
             reader.readAsText(file);
         }
@@ -7351,83 +7623,129 @@ function applyKitchenParams() {
     console.log("Глобальные параметры кухни обновлены.");
 
     // --- Блок 3: Пересчёт размеров/позиций ВСЕХ шкафов в данных ---
-    console.log("[applyKitchenParams] Рассчитанные позиции для шкафов:");
+    console.log("[applyKitchenParams] Блок 3: Пересчёт размеров/позиций ВСЕХ шкафов в данных.");
     cabinets.forEach((cabinet, cabIndex_for_log) => {
-        if (cabinet.cabinetConfig === 'falsePanel') {
-            console.log(`  [applyKParams_FP] Пересчет для фальш-панели ID: ${cabinet.id_data || cabinet.mesh?.uuid}`);
-            const fpHeightOption = cabinet.fp_height_option || 'cabinetHeight';
-            const fpVerticalAlign = cabinet.fp_vertical_align || 'cabinetBottom';
+        // Сохраним исходные значения для отладки, если что-то пойдет не так
+        // const initialHeightForLog = cabinet.height;
+        // const initialOffsetBottomForLog = cabinet.offsetBottom;
 
-            if (fpVerticalAlign === 'floor') {
-                cabinet.offsetBottom = cabinet.fp_offset_from_floor !== undefined ? cabinet.fp_offset_from_floor : 0.0;
-            } else { 
+        const isTallCabinetType = (cabinet.cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge'].includes(cabinet.cabinetConfig));
+        const isLowerNonFPCabinet = (cabinet.type === 'lowerCabinet' && cabinet.cabinetConfig !== 'falsePanel');
+
+        // --- СНАЧАЛА ОБРАБОТАЕМ ВЫСОТУ (cabinet.height) И ОТСТУП СНИЗУ (cabinet.offsetBottom) ---
+        if (cabinet.isHeightIndependent) {
+        // Если высота независима, cabinet.height НЕ МЕНЯЕТСЯ здесь (кроме ФП с kitchenHeight).
+        // НО! offsetBottom может меняться для шкафов, стоящих на полу.
+
+            if (cabinet.cabinetConfig === 'falsePanel') {
+                // Для ФП offsetBottom зависит от fp_vertical_align
+                if (cabinet.fp_vertical_align === 'floor') {
+                    // Если от пола, offsetBottom берется из fp_offset_from_floor и НЕ ЗАВИСИТ от plinthHeight
+                    // cabinet.offsetBottom остается таким, каким был (установлен в меню конфигурации)
+                    // console.log(`  [applyKParams] ФП ${cabinet.id_data || cabIndex_for_log} (isHeightIndependent=true, align=floor) offsetBottom=${cabinet.offsetBottom.toFixed(3)}м НЕ МЕНЯЕТСЯ.`);
+                } else { // fp_vertical_align === 'cabinetBottom'
+                    // Если от низа шкафов, то offsetBottom = plinthHeight
+                    cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+                    // console.log(`  [applyKParams] ФП ${cabinet.id_data || cabIndex_for_log} (isHeightIndependent=true, align=cabinetBottom) offsetBottom ОБНОВЛЕН: ${cabinet.offsetBottom.toFixed(3)}м`);
+                }
+                // Высота ФП с fp_height_option === 'kitchenHeight' зависит от totalHeight и нового offsetBottom
+                if (cabinet.fp_height_option === 'kitchenHeight') {
+                    cabinet.height = (kitchenGlobalParams.totalHeight / 1000) - cabinet.offsetBottom; // Используем уже обновленный cabinet.offsetBottom
+                    cabinet.height = Math.max(0.01, cabinet.height || 0.01);
+                    // console.log(`  [applyKParams] ФП ${cabinet.id_data || cabIndex_for_log} (fp_height_option='kitchenHeight') высота ОБНОВЛЕНА: H=${cabinet.height.toFixed(3)}м`);
+                }
+                // Для ФП с fp_height_option === 'freeHeight', высота не меняется.
+
+            } else if (cabinet.type === 'freestandingCabinet' || isTallCabinetType) {
+                // Для высоких и отдельно стоящих шкафов с isHeightIndependent=true,
+                // высота не меняется, а offsetBottom = plinthHeight
                 cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+                // console.log(`  [applyKParams] Шкаф ${cabinet.id_data || cabIndex_for_log} (type: ${cabinet.type}, isHeightIndependent=true) offsetBottom ОБНОВЛЕН: ${cabinet.offsetBottom.toFixed(3)}м. Высота ${cabinet.height.toFixed(3)}м НЕ МЕНЯЕТСЯ.`);
             }
-            // cabinet.offsetBottom = Math.max(0, cabinet.offsetBottom || 0); // Ensure non-negative
+            // Для верхних шкафов с isHeightIndependent=true, ни высота, ни offsetBottom не меняются от plinthHeight.
+            // Их offsetBottom устанавливается относительно фартука/антресолей.
 
-            let calculatedFPHeightM = cabinet.height; 
-            switch (fpHeightOption) {
-                case 'cabinetHeight':
-                    calculatedFPHeightM = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (cabinet.offsetBottom * 1000)) / 1000;
-                    cabinet.isHeightIndependent = false;
-                    break;
-                case 'toGola':
-                    const availableForGolaMm_FP = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (cabinet.offsetBottom * 1000);
-                    const boxHeightForGolaCalc_FP = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight;
-                    const golaHeightM_FP = calculateActualGolaHeight(
-                        kitchenGlobalParams.golaMinHeightMm, 
-                        (cabinet.facadeGap || 0.003) * 1000, 
-                        boxHeightForGolaCalc_FP
-                    ) / 1000;
-                    calculatedFPHeightM = (availableForGolaMm_FP / 1000) - golaHeightM_FP;
-                    cabinet.isHeightIndependent = false;
-                    break;
-                case 'kitchenHeight':
-                    calculatedFPHeightM = (kitchenGlobalParams.totalHeight / 1000) - cabinet.offsetBottom;
-                    cabinet.isHeightIndependent = true; 
-                    break;
-                case 'freeHeight':
-                    if (cabinet.fp_custom_height !== undefined) {
-                        calculatedFPHeightM = cabinet.fp_custom_height;
-                    }
-                    cabinet.isHeightIndependent = true;
-                    break;
-            }
-            cabinet.height = Math.max(0.050, calculatedFPHeightM || 0.050); // Clamp and ensure non-NaN
-            console.log(`    [applyKParams_FP] fpHeightOption=${fpHeightOption}, new height=${cabinet.height.toFixed(3)}`);
+        } else { // Если высота ЗАВИСИМА (isHeightIndependent === false)
+            if (isTallCabinetType) {
+                cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.plinthHeight) / 1000;
+                cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+            } else if (isLowerNonFPCabinet) {
+                cabinet.height = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+                cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+            } else if (cabinet.type === 'upperCabinet') {
+                // ... (логика для верхних шкафов без изменений) ...
+                const countertopHeightM = kitchenGlobalParams.countertopHeight / 1000;
+                const apronHeightM = kitchenGlobalParams.apronHeight / 1000;
+                const totalHeightM = kitchenGlobalParams.totalHeight / 1000;
+                const mezzanineHeightM = kitchenGlobalParams.mezzanineHeight / 1000;
+                const topApronEdgeM = apronHeightM + countertopHeightM;
+                if (cabinet.isMezzanine == 'normal') {
+                    cabinet.height = totalHeightM - topApronEdgeM;
+                    cabinet.offsetBottom = topApronEdgeM;
+                } else if (cabinet.isMezzanine == 'mezzanine') {
+                    cabinet.height = mezzanineHeightM;
+                    cabinet.offsetBottom = totalHeightM - mezzanineHeightM;
+                } else if (cabinet.isMezzanine == 'underMezzanine') {
+                    cabinet.height = totalHeightM - topApronEdgeM - mezzanineHeightM;
+                    cabinet.offsetBottom = topApronEdgeM;
+                }
+            } else if (cabinet.cabinetConfig === 'falsePanel') {
+                // ... (логика для ФП с isHeightIndependent = false без изменений) ...
+                const fpHeightOption = cabinet.fp_height_option || 'cabinetHeight';
+                const currentOffsetBottomM_fp = ((cabinet.fp_vertical_align === 'floor' && cabinet.fp_offset_from_floor !== undefined)
+                                        ? cabinet.fp_offset_from_floor
+                                        : (kitchenGlobalParams.plinthHeight / 1000)) || 0;
+                cabinet.offsetBottom = currentOffsetBottomM_fp;
 
-            if (cabinet.fp_type === 'narrow' || cabinet.fp_type === 'decorativePanel') {
-                 const { thickness: facadeThicknessM_FP } = getFacadeMaterialAndThickness(cabinet);
-                 cabinet.width = facadeThicknessM_FP; 
+                let calculatedFPHeightM = cabinet.height;
+                if (fpHeightOption === 'cabinetHeight') {
+                    calculatedFPHeightM = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (currentOffsetBottomM_fp * 1000)) / 1000;
+                } else if (fpHeightOption === 'toGola') {
+                    const availableForGolaAndFacadesMm_fp = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - (currentOffsetBottomM_fp * 1000);
+                    const cabinetHeightForGolaCalculating_fp = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight;
+                    const golaHeightM_fp = (window.calculateActualGolaHeight ? window.calculateActualGolaHeight(kitchenGlobalParams.golaMinHeightMm, (cabinet.facadeGap || 0.003) * 1000, cabinetHeightForGolaCalculating_fp) / 1000 : 0.058);
+                    calculatedFPHeightM = availableForGolaAndFacadesMm_fp / 1000 - golaHeightM_fp;
+                }
+                cabinet.height = calculatedFPHeightM;
             }
-        } else if (cabinet.type === 'lowerCabinet' && !cabinet.isHeightIndependent) {
-            cabinet.height = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
             cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
-            cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
-            cabinet.offsetFromParentWall = calculateLowerCabinetOffset(cabinet);
-        } else if (cabinet.type === 'upperCabinet') {
-            if (cabinet.isMezzanine == 'normal') { 
-                cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight) / 1000; 
-                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
-                cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; 
-            } else if (cabinet.isMezzanine == 'mezzanine') { 
-                cabinet.height = kitchenGlobalParams.mezzanineHeight / 1000; 
-                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
-                cabinet.offsetBottom = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.mezzanineHeight) / 1000; 
-            } else if (cabinet.isMezzanine == 'underMezzanine') { 
-                cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.countertopHeight - kitchenGlobalParams.apronHeight - kitchenGlobalParams.mezzanineHeight) / 1000; 
-                cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
-                cabinet.offsetBottom = (kitchenGlobalParams.countertopHeight + kitchenGlobalParams.apronHeight) / 1000; 
-            }
-        } else if (cabinet.isHeightIndependent && cabinet.type !== 'freestandingCabinet') {
-            cabinet.height = (kitchenGlobalParams.totalHeight - kitchenGlobalParams.plinthHeight) / 1000;
-            cabinet.height = Math.max(0.01, cabinet.height || 0.01); // CLAMP
-            cabinet.offsetBottom = kitchenGlobalParams.plinthHeight / 1000;
+            // console.log(`  [applyKParams] Шкаф ${cabinet.id_data || cabIndex_for_log} (isHeightIndependent=false) высота/отступ ПЕРЕСЧИТАНЫ: H=${cabinet.height.toFixed(3)}м, OB=${cabinet.offsetBottom.toFixed(3)}м`);
         }
 
-        if (cabinet.mesh) { 
+        // --- ТЕПЕРЬ ОБРАБОТАЕМ ОСТАЛЬНЫЕ ПАРАМЕТРЫ, КОТОРЫЕ МОГУТ ЗАВИСЕТЬ ОТ НОВЫХ РАЗМЕРОВ/ПОЗИЦИЙ ---
+
+        // Пересчет отступа от стены для нижних шкафов (кроме фальш-панелей, для них это обычно 0 или не актуально)
+        if (isLowerNonFPCabinet && cabinet.wallId !== 'Bottom') {
+            cabinet.offsetFromParentWall = calculateLowerCabinetOffset(cabinet);
+        }
+
+        // Для фальш-панелей ширина и глубина могут зависеть от опций, но здесь мы их не меняем,
+        // они должны были быть установлены в меню конфигурации.
+        // Но если ФП была "узкая" или "декоративная", ее ширина = толщине фасада.
+        // Это должно было быть установлено в applyConfigMenuSettings или applyChangesAndPrepareForConfigMenu.
+        // На всякий случай, если `cabinet.width` для узкой ФП неверно, его можно скорректировать здесь,
+        // но лучше это делать при изменении `facadeSet` или `fp_type`.
+        if (cabinet.cabinetConfig === 'falsePanel') {
+            if (cabinet.fp_type === 'narrow' || cabinet.fp_type === 'decorativePanel') {
+                const { thickness: facadeThicknessM_fp } = getFacadeMaterialAndThickness(cabinet);
+                if (Math.abs(cabinet.width - facadeThicknessM_fp) > 1e-5) {
+                    // console.log(`  [applyKParams] Коррекция ширины для узкой/декоративной ФП ${cabinet.id_data || cabIndex_for_log} с ${cabinet.width.toFixed(3)}м на ${facadeThicknessM_fp.toFixed(3)}м`);
+                    cabinet.width = facadeThicknessM_fp;
+                }
+            }
+        }
+
+        // Обновляем 3D позицию шкафа на основе обновленных cabinet.offsetBottom, cabinet.offsetFromParentWall и т.д.
+        if (cabinet.mesh) { // Обновляем позицию, только если меш существует
             updateCabinetPosition(cabinet);
         }
+
+        // Логируем изменения для отладки
+        // if (Math.abs(initialHeightForLog - cabinet.height) > 1e-5 || Math.abs(initialOffsetBottomForLog - cabinet.offsetBottom) > 1e-5) {
+        //     console.log(`  [applyKParams] ИЗМЕНЕНЫ H/OB для ${cabinet.id_data || cabIndex_for_log} (type: ${cabinet.type}, config: ${cabinet.cabinetConfig}, isIndep: ${cabinet.isHeightIndependent}):`);
+        //     console.log(`    Старые: H=${initialHeightForLog.toFixed(3)}, OB=${initialOffsetBottomForLog.toFixed(3)}`);
+        //     console.log(`    Новые: H=${cabinet.height.toFixed(3)}, OB=${cabinet.offsetBottom.toFixed(3)}`);
+        // }
     });
     console.log("[applyKitchenParams] Данные (размеры/позиции) шкафов обновлены.");
 
@@ -7661,13 +7979,12 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
     }
 
     const newSettings = {}; // Используем newSettings вместо newValues, чтобы не путать
-    configMenu.querySelectorAll('input[type="number"], input[type="text"], select, input[type="color"]').forEach(el => {
+    configMenu.querySelectorAll('input[type="number"], input[type="text"], select, input[type="color"]').forEach(el => { 
         const prop = el.dataset.setProp || el.id;
-        if (prop && !['toggleDetailBtn', 'applyConfigBtnInMenu', /* другие кнопки в configMenu */].includes(el.id)) {
+        if (prop && !['toggleDetailBtn', 'applyConfigBtnInMenu'].includes(el.id)) {
             const propsInMetersFromMm = [
-                'height', // Основное поле высоты шкафа, если оно есть в configMenu
-                'sinkDiameter', 'stretcherDrop', 'extraOffset', 'offsetFromParentWall',
-                'fp_custom_height', 'fp_offset_from_floor', 'fp_depth', 'wallOffset'
+                'height', 'sinkDiameter', 'stretcherDrop', 'extraOffset', 'offsetFromParentWall',
+                'fp_custom_height', 'fp_offset_from_floor', 'fp_depth', 'wallOffset', 'offsetBottom'
             ];
             if (el.type === 'number' || el.type === 'text') {
                 let rawValue = parseFloat(el.value.replace(',', '.'));
@@ -7679,12 +7996,7 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
                     }
                 } else if (!isNaN(rawValue)) { newSettings[prop] = rawValue; }
             } else if (el.type === 'color' && prop === 'initialColor') { newSettings[prop] = el.value; }
-            else if (el.tagName === 'SELECT') { 
-                newSettings[prop] = el.value; 
-                // Дополнительный лог специально для селектов
-                //console.log("[ACMS] Считано из configMenu (newSettings):", JSON.parse(JSON.stringify(newSettings)));
-                //console.log(`  [ACMS newSettings] shelfType: ${newSettings.shelfType}, shelfCount: ${newSettings.shelfCount}`);
-            }
+            else if (el.tagName === 'SELECT') { newSettings[prop] = el.value; }
         }
     });
     //console.log("[ACMS] Считано из configMenu (newSettings):", JSON.parse(JSON.stringify(newSettings)));
@@ -7694,6 +8006,15 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
      //console.log("newSettings.wallOffset: " + newSettings.wallOffset);
 
     // Эти свойства специфичны для конфигурации, которая УЖЕ установлена в cabinet.cabinetConfig
+    if (newSettings.isHeightIndependent !== undefined) {
+        cabinet.isHeightIndependent = newSettings.isHeightIndependent;
+    }
+    if (cabinet.type === 'upperCabinet' && cabinet.isMezzanine === 'normal') {
+        const checkboxUpper = configMenu.querySelector('#isHeightIndependentCheckboxUpper');
+        if (checkboxUpper) { // Если чекбокс существует в DOM
+            cabinet.isHeightIndependent = checkboxUpper.checked;
+        }
+    }
     if (newSettings.fp_type !== undefined) cabinet.fp_type = newSettings.fp_type;
     if (newSettings.fp_height_option !== undefined) cabinet.fp_height_option = newSettings.fp_height_option;
     if (newSettings.fp_vertical_align !== undefined) cabinet.fp_vertical_align = newSettings.fp_vertical_align;
@@ -7717,6 +8038,16 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
     if (newSettings.rearPanel !== undefined) cabinet.rearPanel = newSettings.rearPanel;
     if (newSettings.offsetFromParentWall !== undefined) cabinet.offsetFromParentWall = newSettings.offsetFromParentWall;
     if (newSettings.ovenHeight !== undefined) {cabinet.ovenHeight = newSettings.ovenHeight;}
+    if (newSettings.ovenType !== undefined) {cabinet.ovenType = newSettings.ovenType;}
+    if (newSettings.ovenLevel !== undefined) {cabinet.ovenLevel = newSettings.ovenLevel;}
+    if (newSettings.microwaveType !== undefined) {cabinet.microwaveType = newSettings.microwaveType;}
+    if (newSettings.underOvenFill !== undefined) {
+        cabinet.underOvenFill = newSettings.underOvenFill;
+    }
+    if (newSettings.topShelves !== undefined) {
+        cabinet.topShelves = newSettings.topShelves;
+    }
+    
     if (newSettings.ovenPosition !== undefined) {
         cabinet.ovenPosition = newSettings.ovenPosition; // 'top' или 'bottom'
     }
@@ -7730,6 +8061,68 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
         cabinet.ovenColor = newSettings.ovenColorSelect;
         //console.log(`  [ACMS] Установлено cabinet.ovenColor из newSettings.ovenColorSelect: ${cabinet.ovenColor}`);
     }
+    if (newSettings.visibleSide !== undefined) cabinet.visibleSide = newSettings.visibleSide;
+    if (newSettings.verticalGolaProfile !== undefined) cabinet.verticalGolaProfile = newSettings.verticalGolaProfile;
+    if (newSettings.gapAboveTopFacadeMm !== undefined && newSettings.gapAboveTopFacadeMm !== null && !isNaN(parseFloat(newSettings.gapAboveTopFacadeMm))) {
+        let parsedGap = parseFloat(newSettings.gapAboveTopFacadeMm); // newSettings.gapAboveTopFacadeMm может быть уже числом или строкой
+        if (!isNaN(parsedGap)) { // Проверяем, что результат парсинга - число
+            cabinet.gapAboveTopFacadeMm = Math.max(0, Math.round(parsedGap)); // Округляем до целого и не даем быть < 0
+        } else {
+            console.warn(`  [ACMS] Не удалось спарсить gapAboveTopFacadeMm: "${newSettings.gapAboveTopFacadeMm}". Оставляем старое значение или дефолт.`);
+            cabinet.gapAboveTopFacadeMm = cabinet.gapAboveTopFacadeMm !== undefined ? cabinet.gapAboveTopFacadeMm : 3;
+        }
+    } else if (newSettings.gapAboveTopFacadeMm === '') { // Если пользователь стер значение
+        cabinet.gapAboveTopFacadeMm = 3; // Пример: ставим дефолт
+    }
+    if (newSettings.fridgeNicheHeightMm !== undefined && !isNaN(parseFloat(newSettings.fridgeNicheHeightMm))) {
+        cabinet.fridgeNicheHeightMm = Math.max(1000, Math.min(2500, Math.round(parseFloat(newSettings.fridgeNicheHeightMm)))); // Ограничение и округление
+        console.log(`  [ACMS] Применено fridgeNicheHeightMm: ${cabinet.fridgeNicheHeightMm}`);
+    }
+    if (newSettings.fridgeType !== undefined) cabinet.fridgeType = newSettings.fridgeType;
+    if (newSettings.shelvesAbove !== undefined) cabinet.shelvesAbove = newSettings.shelvesAbove;
+    // ... (применение visibleSide, doorOpening, verticalGolaProfile, если их data-set-prop настроены)
+    if (newSettings.doorOpening !== undefined) cabinet.doorOpening = newSettings.doorOpening;
+    if (newSettings.freezerFacadeHeightMm !== undefined && !isNaN(parseFloat(newSettings.freezerFacadeHeightMm))) {
+        cabinet.freezerFacadeHeightMm = Math.max(500, Math.round(parseFloat(newSettings.freezerFacadeHeightMm)));
+    }
+    if (newSettings.topFacade1HeightMm !== undefined && !isNaN(parseFloat(newSettings.topFacade1HeightMm))) {
+        cabinet.topFacade1HeightMm = Math.max(50, Math.round(parseFloat(newSettings.topFacade1HeightMm)));
+    }
+    if (newSettings.topFacade2HeightMm !== undefined && !isNaN(parseFloat(newSettings.topFacade2HeightMm))) {
+        cabinet.topFacade2HeightMm = Math.max(0, Math.round(parseFloat(newSettings.topFacade2HeightMm)));
+    }
+
+
+
+
+    // --- Обновление высоты шкафа на основе newSettings.height и isHeightIndependent ---
+    const isTallCabinet_apply = (cabinet.cabinetType === 'straight' && ['tallStorage', 'tallOvenMicro', 'fridge'].includes(cabinet.cabinetConfig));
+    const isUpperNormal_apply = (cabinet.type === 'upperCabinet' && cabinet.isMezzanine === 'normal');
+    if (newSettings.height !== undefined) { // Если поле высоты было в меню и было считано
+        if (isTallCabinet_apply || (isUpperNormal_apply && cabinet.isHeightIndependent)) {
+            if (cabinet.isHeightIndependent) { // Чекбокс был отмечен (или стал отмечен)
+                cabinet.height = newSettings.height; // Берем значение из поля
+            } else {
+                // Если чекбокс был снят, cabinet.height уже должна быть расчетной
+                // (установлена слушателем чекбокса). Мы не должны брать newSettings.height,
+                // так как поле было disabled.
+                // Просто логируем, что используем уже установленную расчетную высоту.
+            }
+        } else if (cabinet.type === 'upperCabinet' && cabinet.isMezzanine !== 'normal' && !cabinet.isHeightIndependent) {
+            //cabinet.height = newSettings.height;
+        } else if (cabinet.cabinetConfig === 'falsePanel' && cabinet.fp_height_option === 'freeHeight') {
+            cabinet.height = newSettings.height;
+            cabinet.fp_custom_height = newSettings.height;
+        }
+        // Для других случаев (стандартные нижние, зависимые верхние) высота из newSettings.height не применяется здесь.
+    }
+    // --- Конец обновления высоты 
+    // Применение отступа от пола для ОБЫЧНЫХ ВЕРХНИХ со свободной высотой
+    if (isUpperNormal_apply && cabinet.isHeightIndependent && newSettings.offsetBottom !== undefined) {
+        cabinet.offsetBottom = newSettings.offsetBottom;
+        // console.log(`[ACMS] Отступ от пола для верхнего шкафа ${cabinetIndex} (свободный) ПРИМЕНЕН из поля: ${cabinet.offsetBottom} м`);
+    }
+
 
     // --- Блок 3: Окончательный Расчет и применение размеров/параметров для ФАЛЬШ-ПАНЕЛИ ---
     if (cabinet.cabinetConfig === 'falsePanel') {
@@ -7896,7 +8289,7 @@ window.addEventListener('resize', () => {
         outlinePass.resolution.set(canvasWidth, canvasHeight);
     }
     // if (fxaaPass) { ... } // Обновление fxaaPass
-
+    requestRender();
     //updateFaceBounds(); // Обновляем границы
 });
 
@@ -8678,6 +9071,7 @@ function getFacadeMaterialAndThickness(cabinetData) {
                         tex.wrapT = THREE.RepeatWrapping;
                         // Трансформацию применим позже, когда известны точные размеры фасада
                         tex.needsUpdate = true;
+                        requestRender();
                     },
                     undefined,
                     (err) => {
@@ -8777,7 +9171,7 @@ const supportedConfigs = ['swing', 'drawers']; // Поддерживаемые �
 // В script.js
 
 // Список поддерживаемых конфигураций для основной функции детализации
-const generalDetailingSupportedConfigs = ['swing', 'drawers', 'falsePanel', 'oven']; // Можно вынести как константу модуля
+const generalDetailingSupportedConfigs = ['swing', 'drawers', 'falsePanel', 'oven', 'tallOvenMicro', 'fridge']; // Можно вынести как константу модуля
 
 /**
  * Функция-диспетчер для получения детализированного представления шкафа.
@@ -8821,6 +9215,20 @@ function getDetailedCabinetRepresentation(cabinetData) {
     ) {
         console.log(`[Dispatcher] -> Вызов createDetailedOvenCabinetGeometry для '${cabinetData.cabinetConfig}'`);
         return createDetailedOvenCabinetGeometry(cabinetData); // <--- ВЫЗОВ НОВОЙ ФУНКЦИИ
+    } else if (
+        (cabinetData.type === 'lowerCabinet') &&
+        cabinetData.cabinetType === 'straight' &&
+        cabinetData.cabinetConfig === 'tallOvenMicro'
+    ) {
+        console.log(`[Dispatcher] -> Вызов createDetailedTallOvenMicroGeometry для '${cabinetData.cabinetConfig}'`);
+        return createDetailedTallOvenMicroGeometry(cabinetData); // <--- ВЫЗОВ НОВОЙ ФУНКЦИИ
+    } else if ( // <--- НОВЫЙ БЛОК ДЛЯ FRIDGE ---
+        (cabinetData.type === 'lowerCabinet') &&
+        cabinetData.cabinetType === 'straight' &&
+        cabinetData.cabinetConfig === 'fridge'
+    ) {
+        console.log(`[Dispatcher] -> Вызов createDetailedFridgeCabinetGeometry для '${cabinetData.cabinetConfig}'`);
+        return createDetailedFridgeCabinetGeometry(cabinetData); // <--- ВЫЗОВ НОВОЙ ФУНКЦИИ
     }
     // --- Добавьте сюда 'else if' для других типов и их функций детализации ---
     // Например, если у вас будет отдельная функция для верхних шкафов:
@@ -9212,52 +9620,26 @@ function createDetailedCabinetGeometry(cabinetData) {
      }
         // --- БЛОК 7: Гола-профиль ---
         if (handleType === 'gola-profile') {
-            const golaShape = new THREE.Shape(); /* ... ваш shape ... */
-             golaShape.moveTo(0, 0); golaShape.lineTo(0, 5); golaShape.lineTo(14, 5); golaShape.absarc(14, 10, 5, -Math.PI / 2, 0, false);
-             golaShape.lineTo(19, 57); golaShape.lineTo(27, 57); golaShape.lineTo(27, 54); golaShape.lineTo(20, 54);
-             golaShape.lineTo(20, 10); golaShape.quadraticCurveTo(20, 4, 14, 4); golaShape.lineTo(3, 4); golaShape.lineTo(3, 0); golaShape.closePath();
-            const golaProfileLengthMm = (width) * 1000;
-            const extrudeSettings = { depth: golaProfileLengthMm, steps: 1, bevelEnabled: false };
-            let golaGeometry = null;
-            try { /* ... создание и масштабирование golaGeometry ... */
-                golaGeometry = new THREE.ExtrudeGeometry(golaShape, extrudeSettings);
-                golaGeometry.translate(0, 0, -golaProfileLengthMm / 2); // Центрируем по оси выдавливания
-                 // Смещаем шейп так, чтобы его "задняя" точка (X=0) была в локальном 0 по X геометрии
-                 //golaGeometry.translate(-0, -actualGolaHeightMeters*1000 / 2, 0); // Центрируем шейп по Y относительно его высоты
-                golaGeometry.scale(1/1000, 1/1000, 1/1000);
-            } catch (e) { console.error("Err Gola Geom:", e); }
-    
-            if (golaGeometry) {
-                // --- Верхний Гола-профиль (создается всегда, если handleType='gola-profile') ---
-                const golaProfileMesh1 = new THREE.Mesh(golaGeometry, golaMaterial.clone());
-                golaProfileMesh1.name = "golaProfile_Top";
-                golaProfileMesh1.userData = { isCabinetPart: true, objectType: 'cabinetProfile', orientationType: 'extruded', cabinetUUID: cabinetUUID };
+            const golaProfileLengthM = width;
+            const golaProfileMesh1 = createGolaProfileMesh(golaProfileLengthM, golaMaterial, `golaProfile_Top`, cabinetUUID);
+            if (golaProfileMesh1) {
                 golaProfileMesh1.rotation.y = Math.PI / 2;
-                // Y-центр: Верх шкафа - Половина актуальной высоты Гола
                 const golaTopCenterY = height / 2 - 58 / 1000;
                 const golaTopCenterX = 0;
                 const golaTopCenterZ = depth / 2; // Задняя точка профиля в 27мм от переда
                 golaProfileMesh1.position.set(golaTopCenterX, golaTopCenterY, golaTopCenterZ);
                 group.add(golaProfileMesh1);
-    
                 // --- Второй Гола-профиль (для drawers с facadeCount > 1) ---
                 if (config === 'drawers' && facadeCount > 1) {
-                    console.log("   - Создание второго (среднего) Гола-профиля");
-                    const golaProfileMesh2 = new THREE.Mesh(golaGeometry.clone(), golaMaterial.clone());
-                    golaProfileMesh2.name = "golaProfile_Middle";
-                    golaProfileMesh2.userData = { ...golaProfileMesh1.userData };
-                    golaProfileMesh2.rotation.y = Math.PI / 2;
-    
+                    const golaProfileMesh2 = createGolaProfileMesh(golaProfileLengthM, golaMaterial, `golaProfile_Middle`, cabinetUUID);
+                    golaProfileMesh2.rotation.y = Math.PI / 2;   
                     // Высота нижнего фасада (если 2 или 3 фасада)
                     let bottomFacadeHeight = 0;
                     if (facadeCount === 2 || facadeCount === 3) {
                         bottomFacadeHeight = (height - 2 * actualGolaHeightMeters) / 2; 
-                        console.log(`[Гола] Расчетная высота нижнего фасада для 2-го профиля: ${bottomFacadeHeight.toFixed(3)} м`);
                     }
-    
                     // Y-центр второго профиля: Низ шкафа + Высота нижнего фасада + Половина высоты Гола
                     const golaMidCenterY = -height / 2 + bottomFacadeHeight - 58 / 1000 + actualGolaHeightMeters;
-    
                     golaProfileMesh2.position.set(golaTopCenterX, golaMidCenterY, golaTopCenterZ);
                     group.add(golaProfileMesh2);
                 }
@@ -10367,38 +10749,20 @@ function createDetailedOvenCabinetGeometry(cabinetData) {
     // --- 7. Gola-профиль (если handleType === 'gola-profile') ---
     // Gola-профиль ВСЕГДА ТОЛЬКО СВЕРХУ шкафа (как для распашного)
     if (handleType === 'gola-profile') {
-        const golaShape = new THREE.Shape(); 
-            golaShape.moveTo(0, 0); golaShape.lineTo(0, 5); golaShape.lineTo(14, 5); golaShape.absarc(14, 10, 5, -Math.PI / 2, 0, false);
-            golaShape.lineTo(19, 57); golaShape.lineTo(27, 57); golaShape.lineTo(27, 54); golaShape.lineTo(20, 54);
-            golaShape.lineTo(20, 10); golaShape.quadraticCurveTo(20, 4, 14, 4); golaShape.lineTo(3, 4); golaShape.lineTo(3, 0); golaShape.closePath();
-
         // Длина профиля МЕЖДУ боковинами
         const golaProfileLengthM = cabWidthM; 
-        if (golaProfileLengthM > 0.01) { // Минимальная длина для создания
-            const extrudeSettingsGola = { depth: golaProfileLengthM * 1000, steps: 1, bevelEnabled: false };
-            let golaGeometry = null;
-            try { 
-                golaGeometry = new THREE.ExtrudeGeometry(golaShape, extrudeSettingsGola);
-                golaGeometry.translate(0, 0, -golaProfileLengthM * 1000 / 2); 
-                golaGeometry.scale(1/1000, 1/1000, 1/1000); 
-            } catch (e) { console.error("    [OVEN] Ошибка геометрии Gola:", e); golaGeometry = null; }
 
-            if (golaGeometry) {
-                const golaProfileMesh = new THREE.Mesh(golaGeometry, golaMaterial.clone());
-                golaProfileMesh.name = `gola_top_oven_${cabinetUUID.substring(0,4)}`;
-                golaProfileMesh.userData = { isCabinetPart: true, objectType: 'cabinetProfile', cabinetUUID: cabinetUUID };
-                golaProfileMesh.rotation.y = Math.PI / 2; 
-               
-                const golaShapeHeightM = 58 / 1000; // Фактическая высота профиля Гола по его форме
-                const topEdgeOfSidePanelY = sidePanelCenterY_inGroup + sidePanelActualHeight / 2; // Верхняя кромка текущей боковины
-                
-                const golaMeshCenterY = topEdgeOfSidePanelY - (golaShapeHeightM);
-                const golaMeshCenterZ = (cabDepthM / 2);
+        const golaProfileMesh = createGolaProfileMesh(golaProfileLengthM, golaMaterial, `gola_top_oven_${cabinetUUID.substring(0,4)}`, cabinetUUID);
 
+        if (golaProfileMesh) {
+            golaProfileMesh.rotation.y = Math.PI / 2; 
+            const golaShapeHeightM = 58 / 1000; // Фактическая высота профиля Гола по его форме
+            const topEdgeOfSidePanelY = sidePanelCenterY_inGroup + sidePanelActualHeight / 2; // Верхняя кромка текущей боковины
+            const golaMeshCenterY = topEdgeOfSidePanelY - (golaShapeHeightM);
+            const golaMeshCenterZ = (cabDepthM / 2);
 
-                golaProfileMesh.position.set(0, golaMeshCenterY, golaMeshCenterZ); // X=0, т.к. между боковинами
-                group.add(golaProfileMesh);
-            }
+            golaProfileMesh.position.set(0, golaMeshCenterY, golaMeshCenterZ); // X=0, т.к. между боковинами
+            group.add(golaProfileMesh);
         } else {
             console.warn("    [OVEN] Невозможно создать Gola-профиль: расчетная длина <= 0.");
         }
@@ -10595,6 +10959,2262 @@ function createDetailedOvenCabinetGeometry(cabinetData) {
         // Пока оставим возврат группы, чтобы можно было ее видеть.
     }
     return group;
+}
+
+/**
+ * Создает THREE.Group, представляющую детализированную модель высокого шкафа
+ * с духовкой и микроволновкой.
+ * @param {object} cabinetData - Объект шкафа из массива 'cabinets'.
+ * @returns {THREE.Group | null} Группа со всеми частями шкафа или null при ошибке.
+ */
+function createDetailedTallOvenMicroGeometry(cabinetData) {
+    console.log(`[createDetailedTallOvenMicro] Начало для шкафа: ${cabinetData.mesh?.uuid}, Config: ${cabinetData.cabinetConfig}`);
+
+    if (!cabinetData || cabinetData.cabinetConfig !== 'tallOvenMicro') {
+        console.error("[createDetailedTallOvenMicro] Неверные данные шкафа или конфигурация не 'tallOvenMicro'.");
+        return null;
+    }
+
+    const group = new THREE.Group();
+    group.userData.isDetailedCabinet = true;
+    group.userData.objectType = 'cabinet';
+    group.userData.cabinetType = cabinetData.cabinetType;
+    group.userData.cabinetConfig = cabinetData.cabinetConfig;
+    const cabinetUUID = cabinetData.mesh?.uuid || THREE.MathUtils.generateUUID();
+
+    // --- Основные размеры и параметры ---
+    const panelThicknessM = getPanelThickness();
+    const cabWidthM = cabinetData.width;
+    const cabHeightM = cabinetData.height;
+    const cabDepthM = cabinetData.depth;
+    const boxAvailableHeightMeters = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+
+    // --- Материалы ---
+    const cabinetMaterial = new THREE.MeshStandardMaterial({
+        color: cabinetData.initialColor,
+        roughness: 0.8,
+        metalness: 0.1,
+        name: `TallOvenMicroBodyMat_${cabinetUUID.substring(0,4)}`
+    });
+
+    // --- 1. ДНО ШКАФА (методом экструзии) ---
+    const bottomPanelShapeWidth = cabWidthM;   // Это будет X для Shape (ширина шкафа)
+    const bottomPanelShapeDepth = cabDepthM;   // Это будет Y для Shape (глубина шкафа)
+    const bottomPanelExtrudeDepth = panelThicknessM; // Это будет глубина экструзии (толщина дна)
+
+    console.log(`  [TallOvenMicro] Дно (экструзия): Shape W (X шкафа)=${bottomPanelShapeWidth.toFixed(3)}, Shape D (Z шкафа)=${bottomPanelShapeDepth.toFixed(3)}, Extrude Depth (Y шкафа - толщина)=${bottomPanelExtrudeDepth.toFixed(3)}`);
+
+    if (bottomPanelShapeWidth <= 0 || bottomPanelShapeDepth <= 0 || bottomPanelExtrudeDepth <= 0) {
+        console.error("  [TallOvenMicro] Некорректные размеры для создания дна экструзией.");
+    } else {
+        // --- Создаем Shape для дна (простой прямоугольник в плоскости XY шейпа) ---
+        // Начало координат Shape (0,0) будет соответствовать одному из углов дна.
+        // Например, задний левый угол в плоскости XZ шкафа.
+        const bottomShape = new THREE.Shape();
+        const radius = 0.008; // 8 мм
+
+        // Координаты углов, которые мы будем скруглять
+        const corner1X = bottomPanelShapeWidth - 0.08;
+        const corner1Y = bottomPanelShapeDepth - 0.04;
+
+        const corner2X = 0.08;
+        const corner2Y = bottomPanelShapeDepth - 0.04;
+
+        bottomShape.moveTo(0, 0);
+        bottomShape.lineTo(bottomPanelShapeWidth, 0);
+        bottomShape.lineTo(bottomPanelShapeWidth, bottomPanelShapeDepth);
+        bottomShape.lineTo(corner1X, bottomPanelShapeDepth);
+
+        bottomShape.lineTo(corner1X, corner1Y + radius); // Точка начала первой дуги
+        // Первое скругление (правый верхний угол выреза)
+        bottomShape.quadraticCurveTo(
+            corner1X,       // cpX (вершина угла)
+            corner1Y,       // cpY (вершина угла)
+            corner1X - radius, // endX
+            corner1Y        // endY
+        );
+        bottomShape.lineTo(corner2X + radius, corner2Y); // Точка начала второй дуги
+
+        bottomShape.quadraticCurveTo(
+            corner2X,       // cpX (вершина угла)
+            corner2Y,       // cpY (вершина угла)
+            corner2X,       // endX
+            corner2Y + radius  // endY
+        );
+
+        // Линия до передней кромки шкафа (на левой стороне выреза)
+        bottomShape.lineTo(0.08, bottomPanelShapeDepth);
+        bottomShape.lineTo(0, bottomPanelShapeDepth);
+        bottomShape.closePath(); // Замыкаем контур
+
+        const extrudeSettings = {
+            steps: 1,
+            depth: bottomPanelExtrudeDepth, // Глубина выдавливания = толщина дна
+            bevelEnabled: false
+        };
+
+        let bottomGeometry = null;
+        try {
+            bottomGeometry = new THREE.ExtrudeGeometry(bottomShape, extrudeSettings);
+        } catch (error) {
+            console.error("  [TallOvenMicro] Ошибка создания ExtrudeGeometry для дна:", error);
+        }
+
+        if (bottomGeometry) {
+            const bottomPanelMesh = new THREE.Mesh(bottomGeometry, cabinetMaterial.clone());
+            bottomPanelMesh.name = `bottom_extruded_tall_oven_micro_${cabinetUUID.substring(0,4)}`;
+            bottomPanelMesh.userData = {
+                isCabinetPart: true,
+                objectType: 'cabinetPart',
+                panelType: 'bottom', // Можно добавить для идентификации
+                orientationType: 'horizontal_extruded', // Указываем, что это экструзия для горизонтальной панели
+                cabinetUUID: cabinetUUID
+            };
+
+            // --- Позиционирование и ориентация экструдированного дна ---
+            //    Поворачиваем на -90 градусов вокруг оси X.
+            bottomPanelMesh.rotation.x = -Math.PI / 2;
+
+            // 2. Смещение:
+            const posX = -bottomPanelShapeWidth / 2;
+            const posY = -cabHeightM / 2 + bottomPanelExtrudeDepth * 0; 
+            const posZ = bottomPanelShapeDepth / 2;
+
+            bottomPanelMesh.position.set(
+                posX, //x
+                posY, //y
+                posZ //z
+            );
+
+            group.add(bottomPanelMesh);
+            console.log(`  [TallOvenMicro] Дно (экструзия) создано и добавлено. Pos: X=${bottomPanelMesh.position.x.toFixed(3)}, Y=${bottomPanelMesh.position.y.toFixed(3)}, Z=${bottomPanelMesh.position.z.toFixed(3)}`);
+        } else {
+            console.error("  [TallOvenMicro] Не удалось создать геометрию дна экструзией.");
+        }
+    }
+    // --- КОНЕЦ КОДА ДЛЯ ДНА ---
+
+     // --- ОБЩИЕ ПАРАМЕТРЫ ДЛЯ БОКОВИН И ВЫРЕЗОВ ГОЛА ---
+    const handleType = kitchenGlobalParams.handleType || 'standard';
+    const verticalGolaSetting = cabinetData.verticalGolaProfile || 'none';
+    const golaCutDepthFromFront = 0.027; // Глубина "въедания" выреза от переднего торца ВНУТРЬ панели (27 мм)
+    const golaCutVerticalLength = 0.070; // Вертикальная длина самого выреза Гола (70 мм)
+    let actualGolaHeightMeters = 0;
+
+    if (handleType === 'gola-profile') {
+        const boxAvailableHeightMetersForGolaCalc = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+        const facadeGapMeters = cabinetData.facadeGap || 0.003;
+        actualGolaHeightMeters = calculateActualGolaHeight(
+            kitchenGlobalParams.golaMinHeightMm,
+            facadeGapMeters * 1000,
+            boxAvailableHeightMetersForGolaCalc * 1000
+        ) / 1000;
+        console.log(`  [TallOvenMicro] actualGolaHeightMeters (для расчета фасадов/секций) = ${actualGolaHeightMeters.toFixed(3)}м`);
+    }
+
+    // --- НОВАЯ СТРОКА: Объявляем переменные для вырезов левой боковины на уровне функции ---
+    let shapeType = 'simple';
+    let y_start_cutout1 = -1, y_end_cutout1 = -1;
+    let y_start_cutout2 = -1, y_end_cutout2 = -1;
+    // ------------------------------------------------------------------------------------
+
+    // --- НАЧАЛО БЛОКА 2: ЛЕВАЯ БОКОВИНА ---
+    console.log(`  [TallOvenMicro] Создание ЛЕВОЙ боковины...`);
+
+    // --- 2.1 РАСЧЕТ РАЗМЕРОВ для левой боковины (ваша логика) ---
+    const leftSide_Height = cabHeightM - panelThicknessM;
+    let leftSide_Depth = cabDepthM;
+    const leftSide_Thickness = panelThicknessM;
+
+    if (verticalGolaSetting === 'left' || verticalGolaSetting === 'both') {
+        leftSide_Depth = cabDepthM - 0.012;
+        // console.log(`    Левая боковина: глубина (X Shape) уменьшена до ${leftSide_Depth.toFixed(3)}м`);
+    }
+    // console.log(`    Левая боковина: Размеры для Shape: Shape_X (Глубина) = ${leftSide_Depth.toFixed(3)}, Shape_Y (Высота) = ${leftSide_Height.toFixed(3)}. Экструзия (Толщина) = ${leftSide_Thickness.toFixed(3)}`);
+
+    if (leftSide_Height <= 0 || leftSide_Depth <= 0 || leftSide_Thickness <= 0) {
+        console.error("  [TallOvenMicro] Некорректные размеры для создания левой боковины.");
+    } else {
+        // --- 2.2 ОПРЕДЕЛЕНИЕ ТИПА КОНТУРА И РАСЧЕТ Y-КООРДИНАТ ВЫРЕЗОВ ---
+        //let shapeType = 'simple'; // 'simple', 'one_cutout', 'two_cutouts'
+        //let y_start_cutout1 = -1, y_end_cutout1 = -1;
+        //let y_start_cutout2 = -1, y_end_cutout2 = -1;
+
+        const ovenLevel = cabinetData.ovenLevel || 'drawer';
+        const underOvenFill = cabinetData.underOvenFill || 'drawers';
+
+        // Горизонтальные вырезы нужны ТОЛЬКО если тип ручек Гола И НЕТ никаких вертикальных Гола-профилей.
+        let needsHorizontalGolaCutsLeft = false; // Переименовал для ясности
+        if (handleType === 'gola-profile' && verticalGolaSetting === 'none') { // НОВАЯ СТРОКА (изменение условия)
+            needsHorizontalGolaCutsLeft = true;                                // НОВАЯ СТРОКА
+        }
+
+        if (needsHorizontalGolaCutsLeft) {
+            console.log(`    Левая боковина: Горизонтальные вырезы Гола разрешены.`);
+            const baseHeightForStandardCuts = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+
+            if (ovenLevel === 'drawer' && underOvenFill === 'drawers') {
+                shapeType = 'one_cutout';
+                // Нижний вырез (cutout1) - как у стандартного нижнего шкафа с 2-мя ящиками
+                const heightOfLowestFacadeSectionInBox = (baseHeightForStandardCuts - 2 * actualGolaHeightMeters) / 2 - 58 / 1000 + actualGolaHeightMeters - panelThicknessM;
+                y_start_cutout1 = heightOfLowestFacadeSectionInBox;
+                y_end_cutout1 = y_start_cutout1 + golaCutVerticalLength;
+                y_start_cutout2 = -1; y_end_cutout2 = -1; // Нет второго выреза
+
+            } else if (ovenLevel === 'countertop' && underOvenFill === 'drawers') {
+                shapeType = 'two_cutouts';
+                // Нижний вырез (cutout1) - как у стандартного нижнего шкафа с 2-мя ящиками
+                const heightOfLowestFacadeSectionInBox = (baseHeightForStandardCuts - 2 * actualGolaHeightMeters) / 2 - 58 / 1000 + actualGolaHeightMeters - panelThicknessM;
+                y_start_cutout1 = heightOfLowestFacadeSectionInBox;
+                y_end_cutout1 = y_start_cutout1 + golaCutVerticalLength;
+
+                // Верхний вырез (cutout2) - над следующей секцией
+                y_start_cutout2 = baseHeightForStandardCuts - 0.058 - panelThicknessM;
+                y_end_cutout2 = y_start_cutout2 + golaCutVerticalLength;
+
+            } else if (ovenLevel === 'countertop' && underOvenFill === 'swing') {
+                shapeType = 'one_cutout';
+                // Только один верхний вырез у верха боковины пенала
+                y_start_cutout1 = baseHeightForStandardCuts - 0.058 - panelThicknessM;
+                y_end_cutout1 = y_start_cutout1 + golaCutVerticalLength;
+                y_start_cutout2 = -1; y_end_cutout2 = -1; // Нет второго выреза
+            } else {
+                shapeType = 'simple'; // Для других комбинаций (или если Гола не используется)
+            }
+
+            // Валидация и коррекция вырезов
+            const allCuts = [];
+            if (y_start_cutout1 !== -1 && y_end_cutout1 > y_start_cutout1 && y_start_cutout1 >= 0 && y_end_cutout1 <= leftSide_Height + 0.0001) {
+                allCuts.push({ start: y_start_cutout1, end: y_end_cutout1 });
+            } else {
+                y_start_cutout1 = -1; y_end_cutout1 = -1;
+            }
+            if (y_start_cutout2 !== -1 && y_end_cutout2 > y_start_cutout2 && y_start_cutout2 >= 0 && y_end_cutout2 <= leftSide_Height + 0.0001) {
+                allCuts.push({ start: y_start_cutout2, end: y_end_cutout2 });
+            } else {
+                y_start_cutout2 = -1; y_end_cutout2 = -1;
+            }
+
+            allCuts.sort((a, b) => a.start - b.start); // Сортируем вырезы по их началу
+
+            // Проверка на пересечение отсортированных вырезов
+            for (let k = 0; k < allCuts.length - 1; k++) {
+                if (allCuts[k].end > allCuts[k+1].start - 0.0005) { // Если конец одного выреза заходит на начало следующего
+                    console.warn(`      Обнаружено пересечение или слишком близкое расположение вырезов Гола. Вырез ${k+1} будет отменен.`);
+                    if (allCuts[k+1].start === y_start_cutout1 && allCuts[k+1].end === y_end_cutout1) { y_start_cutout1 = -1; y_end_cutout1 = -1; }
+                    if (allCuts[k+1].start === y_start_cutout2 && allCuts[k+1].end === y_end_cutout2) { y_start_cutout2 = -1; y_end_cutout2 = -1; }
+                    allCuts.splice(k+1, 1); // Удаляем пересекающийся вырез
+                    k--; // Повторяем проверку для текущего индекса, так как массив изменился
+                }
+            }
+            // Обновляем shapeType на основе количества валидных вырезов
+            const validCutsCount = allCuts.length;
+            if (validCutsCount === 0) shapeType = 'simple';
+            else if (validCutsCount === 1) {
+                shapeType = 'one_cutout';
+                // Переназначаем y_start_cutout1/end1 на единственный валидный вырез
+                y_start_cutout1 = allCuts[0].start; y_end_cutout1 = allCuts[0].end;
+                y_start_cutout2 = -1; y_end_cutout2 = -1;
+            } else if (validCutsCount === 2) {
+                shapeType = 'two_cutouts';
+                y_start_cutout1 = allCuts[0].start; y_end_cutout1 = allCuts[0].end;
+                y_start_cutout2 = allCuts[1].start; y_end_cutout2 = allCuts[1].end;
+            }
+
+        } else { // allowHorizontalGolaCuts = false
+            shapeType = 'simple';
+            console.log(`    Левая боковина: Горизонтальные вырезы Гола НЕ разрешены (из-за verticalGolaSetting или типа ручек). Тип формы: simple.`);
+        }
+
+
+        // --- 2.2.1 СОЗДАНИЕ ФОРМЫ (Shape) на основе shapeType ---
+        const leftSideShape = new THREE.Shape();
+        const x_front_edge_shape = leftSide_Depth; // X в Shape = глубина боковины
+        const x_gola_inner_edge_shape = leftSide_Depth - golaCutDepthFromFront;
+
+        leftSideShape.moveTo(0, 0); // Задний нижний
+        leftSideShape.lineTo(0, leftSide_Height); // Задняя кромка до верха
+        leftSideShape.lineTo(x_front_edge_shape, leftSide_Height); // Верхняя кромка до переда
+
+        // Рисуем переднюю кромку сверху вниз
+        if (shapeType === 'simple') {
+            leftSideShape.lineTo(x_front_edge_shape, 0); // Прямая передняя кромка
+        } else if (shapeType === 'one_cutout') {
+            // Один вырез (используем y_start_cutout1, y_end_cutout1)
+            leftSideShape.lineTo(x_front_edge_shape, y_end_cutout1);
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_end_cutout1);
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_start_cutout1);
+            leftSideShape.lineTo(x_front_edge_shape, y_start_cutout1);
+            leftSideShape.lineTo(x_front_edge_shape, 0);
+        } else if (shapeType === 'two_cutouts') {
+            // Два выреза (используем y_start_cutout2/end2 для верхнего, y_start_cutout1/end1 для нижнего)
+            leftSideShape.lineTo(x_front_edge_shape, y_end_cutout2);    // До верха верхнего выреза
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_end_cutout2); // Вырез 2
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_start_cutout2);
+            leftSideShape.lineTo(x_front_edge_shape, y_start_cutout2);
+
+            leftSideShape.lineTo(x_front_edge_shape, y_end_cutout1);    // Прямой участок до верха нижнего выреза
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_end_cutout1); // Вырез 1
+            leftSideShape.lineTo(x_gola_inner_edge_shape, y_start_cutout1);
+            leftSideShape.lineTo(x_front_edge_shape, y_start_cutout1);
+
+            leftSideShape.lineTo(x_front_edge_shape, 0);                // До низа
+        }
+        leftSideShape.closePath(); // Замкнет на (0,0)
+
+        // --- 2.3 СОЗДАНИЕ ГЕОМЕТРИИ И МЕША (как было) ---
+        const extrudeSettingsSide = { depth: leftSide_Thickness, steps: 1, bevelEnabled: false };
+        let leftSideGeometry = null;
+        try {
+            leftSideGeometry = new THREE.ExtrudeGeometry(leftSideShape, extrudeSettingsSide);
+        } catch (error) { /* ... */ }
+
+        if (leftSideGeometry) {
+            const leftSideMesh = new THREE.Mesh(leftSideGeometry, cabinetMaterial.clone());
+            leftSideMesh.name = `leftSide_ext_tall_oven_micro_${cabinetUUID.substring(0,4)}`;
+            leftSideMesh.userData = {
+                isCabinetPart: true, objectType: 'cabinetPart', panelType: 'leftSide',
+                orientationType: 'vertical_extruded', cabinetUUID: cabinetUUID
+            };
+
+            // --- 2.4 ПОВОРОТ для левой боковины (как было) ---
+            leftSideMesh.rotation.y = -Math.PI / 2;
+
+            // --- 2.5 ПОЗИЦИОНИРОВАНИЕ левой боковины (вновь отлаженная версия) ---
+            const meshPosX = -cabWidthM / 2 + leftSide_Thickness;
+            const meshPosY = -cabHeightM / 2 + panelThicknessM; // Низ боковины на уровне верха дна
+            const meshPosZ = -cabDepthM / 2;                   // Задний край боковины на заднем крае шкафа
+
+            leftSideMesh.position.set(meshPosX, meshPosY, meshPosZ);
+
+            group.add(leftSideMesh);
+            console.log(`      Левая боковина (${shapeType}) создана. Pos: X=${leftSideMesh.position.x.toFixed(3)}, Y=${leftSideMesh.position.y.toFixed(3)}, Z=${leftSideMesh.position.z.toFixed(3)}`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 2: ЛЕВАЯ БОКОВИНА ---
+
+   // --- НАЧАЛО БЛОКА 3: ПРАВАЯ БОКОВИНА ---
+    console.log(`  [TallOvenMicro] Создание ПРАВОЙ боковины...`);
+
+    // --- 3.1 РАСЧЕТ РАЗМЕРОВ для правой боковины ---
+    const rightSide_Height = cabHeightM - panelThicknessM; // Y Shape
+    let rightSide_Depth = cabDepthM;                    // X Shape (глубина панели)
+    const rightSide_Thickness = panelThicknessM;        // Глубина экструзии (толщина панели)
+
+    // Условие для уменьшения глубины правой боковины из-за вертикального Гола
+    if (verticalGolaSetting === 'right' || verticalGolaSetting === 'both') {
+        rightSide_Depth = cabDepthM - 0.012;
+        console.log(`    Правая боковина: глубина (X Shape) уменьшена до ${rightSide_Depth.toFixed(3)}м из-за verticalGola: ${verticalGolaSetting}`);
+    }
+    // console.log(`    Правая боковина: Размеры для Shape: Shape_X (Глубина) = ${rightSide_Depth.toFixed(3)}, Shape_Y (Высота) = ${rightSide_Height.toFixed(3)}. Экструзия (Толщина) = ${rightSide_Thickness.toFixed(3)}`);
+
+    if (rightSide_Height <= 0 || rightSide_Depth <= 0 || rightSide_Thickness <= 0) {
+        console.error("  [TallOvenMicro] Некорректные размеры для создания правой боковины.");
+    } else {
+        // --- 3.2 ОПРЕДЕЛЕНИЕ ТИПА КОНТУРА И РАСЧЕТ Y-КООРДИНАТ ВЫРЕЗОВ ---
+        let shapeType_R = 'simple'; // 'simple', 'one_cutout', 'two_cutouts'
+        let y_start_cutout1_R = -1, y_end_cutout1_R = -1;
+        let y_start_cutout2_R = -1, y_end_cutout2_R = -1;
+
+        const ovenLevel_R = cabinetData.ovenLevel || 'drawer'; // Используем те же настройки шкафа
+        const underOvenFill_R = cabinetData.underOvenFill || 'drawers';
+
+        // Горизонтальные вырезы нужны ТОЛЬКО если тип ручек Гола И НЕТ никаких вертикальных Гола-профилей.
+        let needsHorizontalGolaCutsLeft = false; // Переименовал для ясности
+        if (handleType === 'gola-profile' && verticalGolaSetting === 'none') { // НОВАЯ СТРОКА (изменение условия)
+            needsHorizontalGolaCutsLeft = true;                                // НОВАЯ СТРОКА
+        }
+
+        if (needsHorizontalGolaCutsLeft) {
+            console.log(`    Правая боковина: Горизонтальные вырезы Гола разрешены.`);
+            const baseHeightForStandardCuts_R = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+
+            if (ovenLevel_R === 'drawer' && underOvenFill_R === 'drawers') {
+                shapeType_R = 'one_cutout'; // Как и для левой, согласно вашему коду
+                const heightOfLowestFacadeSectionInBox_R = (baseHeightForStandardCuts_R - 2 * actualGolaHeightMeters) / 2 - 58 / 1000 + actualGolaHeightMeters - panelThicknessM;
+                y_start_cutout1_R = heightOfLowestFacadeSectionInBox_R;
+                y_end_cutout1_R = y_start_cutout1_R + golaCutVerticalLength;
+                y_start_cutout2_R = -1; y_end_cutout2_R = -1;
+            } else if (ovenLevel_R === 'countertop' && underOvenFill_R === 'drawers') {
+                shapeType_R = 'two_cutouts';
+                const heightOfLowestFacadeSectionInBox_R = (baseHeightForStandardCuts_R - 2 * actualGolaHeightMeters) / 2 - 58 / 1000 + actualGolaHeightMeters - panelThicknessM;
+                y_start_cutout1_R = heightOfLowestFacadeSectionInBox_R;
+                y_end_cutout1_R = y_start_cutout1_R + golaCutVerticalLength;
+                y_start_cutout2_R = baseHeightForStandardCuts_R - 0.058 - panelThicknessM;
+                y_end_cutout2_R = y_start_cutout2_R + golaCutVerticalLength;
+            } else if (ovenLevel_R === 'countertop' && underOvenFill_R === 'swing') {
+                shapeType_R = 'one_cutout';
+                y_start_cutout1_R = baseHeightForStandardCuts_R - 0.058 - panelThicknessM; // Используем _cutout1 для единственного
+                y_end_cutout1_R = y_start_cutout1_R + golaCutVerticalLength;
+                y_start_cutout2_R = -1; y_end_cutout2_R = -1;
+            } else {
+                shapeType_R = 'simple';
+            }
+
+            // Валидация и коррекция вырезов для правой боковины
+            const allCuts_R = [];
+            if (y_start_cutout1_R !== -1 && y_end_cutout1_R > y_start_cutout1_R && y_start_cutout1_R >= 0 && y_end_cutout1_R <= rightSide_Height + 0.0001) {
+                allCuts_R.push({ start: y_start_cutout1_R, end: y_end_cutout1_R });
+            } else { y_start_cutout1_R = -1; y_end_cutout1_R = -1; }
+            if (y_start_cutout2_R !== -1 && y_end_cutout2_R > y_start_cutout2_R && y_start_cutout2_R >= 0 && y_end_cutout2_R <= rightSide_Height + 0.0001) {
+                allCuts_R.push({ start: y_start_cutout2_R, end: y_end_cutout2_R });
+            } else { y_start_cutout2_R = -1; y_end_cutout2_R = -1; }
+            allCuts_R.sort((a, b) => a.start - b.start);
+            for (let k = 0; k < allCuts_R.length - 1; k++) {
+                if (allCuts_R[k].end > allCuts_R[k+1].start - 0.0005) {
+                    if (allCuts_R[k+1].start === y_start_cutout1_R && allCuts_R[k+1].end === y_end_cutout1_R) { y_start_cutout1_R = -1; y_end_cutout1_R = -1; }
+                    if (allCuts_R[k+1].start === y_start_cutout2_R && allCuts_R[k+1].end === y_end_cutout2_R) { y_start_cutout2_R = -1; y_end_cutout2_R = -1; }
+                    allCuts_R.splice(k+1, 1); k--;
+                }
+            }
+            const validCutsCount_R = allCuts_R.length;
+            if (validCutsCount_R === 0) shapeType_R = 'simple';
+            else if (validCutsCount_R === 1) {
+                shapeType_R = 'one_cutout';
+                y_start_cutout1_R = allCuts_R[0].start; y_end_cutout1_R = allCuts_R[0].end;
+                y_start_cutout2_R = -1; y_end_cutout2_R = -1;
+            } else if (validCutsCount_R === 2) {
+                shapeType_R = 'two_cutouts';
+                y_start_cutout1_R = allCuts_R[0].start; y_end_cutout1_R = allCuts_R[0].end;
+                y_start_cutout2_R = allCuts_R[1].start; y_end_cutout2_R = allCuts_R[1].end;
+            }
+        } else {
+            shapeType_R = 'simple';
+            // console.log(`    Правая боковина: Горизонтальные вырезы Гола НЕ разрешены. Тип формы: simple.`);
+        }
+
+        // --- 3.2.1 СОЗДАНИЕ ФОРМЫ (Shape) на основе shapeType_R ---
+        const rightSideShape = new THREE.Shape();
+        const x_front_edge_shape_R = rightSide_Depth;
+        const x_gola_inner_edge_shape_R = rightSide_Depth - golaCutDepthFromFront;
+
+        rightSideShape.moveTo(0, 0);
+        rightSideShape.lineTo(0, rightSide_Height);
+        rightSideShape.lineTo(x_front_edge_shape_R, rightSide_Height);
+
+        if (shapeType_R === 'simple') {
+            rightSideShape.lineTo(x_front_edge_shape_R, 0);
+        } else if (shapeType_R === 'one_cutout') {
+            rightSideShape.lineTo(x_front_edge_shape_R, y_end_cutout1_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_end_cutout1_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_start_cutout1_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, y_start_cutout1_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, 0);
+        } else if (shapeType_R === 'two_cutouts') {
+            rightSideShape.lineTo(x_front_edge_shape_R, y_end_cutout2_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_end_cutout2_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_start_cutout2_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, y_start_cutout2_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, y_end_cutout1_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_end_cutout1_R);
+            rightSideShape.lineTo(x_gola_inner_edge_shape_R, y_start_cutout1_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, y_start_cutout1_R);
+            rightSideShape.lineTo(x_front_edge_shape_R, 0);
+        }
+        rightSideShape.closePath();
+
+        // --- 3.3 СОЗДАНИЕ ГЕОМЕТРИИ И МЕША для правой боковины ---
+        const extrudeSettingsSideR = { depth: rightSide_Thickness, steps: 1, bevelEnabled: false };
+        let rightSideGeometry = null;
+        try {
+            rightSideGeometry = new THREE.ExtrudeGeometry(rightSideShape, extrudeSettingsSideR);
+        } catch (error) { console.error(`    [TallOvenMicro] Ошибка ExtrudeGeometry для правой боковины:`, error); }
+
+        if (rightSideGeometry) {
+            const rightSideMesh = new THREE.Mesh(rightSideGeometry, cabinetMaterial.clone());
+            rightSideMesh.name = `rightSide_ext_tall_oven_micro_${cabinetUUID.substring(0,4)}`;
+            rightSideMesh.userData = {
+                isCabinetPart: true, objectType: 'cabinetPart', panelType: 'rightSide',
+                orientationType: 'vertical_extruded', cabinetUUID: cabinetUUID
+            };
+
+            // --- 3.4 ПОВОРОТ для правой боковины ---
+            rightSideMesh.rotation.y = -Math.PI / 2; // Поворот в 
+
+            // --- 3.5 ПОЗИЦИОНИРОВАНИЕ правой боковины ---
+
+            const meshPosX_R = cabWidthM / 2; // Внешняя плоскость боковины (бывшая Z экструзии=thickness) на правом краю шкафа
+            const meshPosY_R = -cabHeightM / 2 + panelThicknessM;
+            const meshPosZ_R = -cabDepthM / 2;
+
+            rightSideMesh.position.set(meshPosX_R, meshPosY_R, meshPosZ_R);
+
+            group.add(rightSideMesh);
+            console.log(`      Правая боковина (${shapeType_R}) создана. Pos: X=${rightSideMesh.position.x.toFixed(3)}, Y=${rightSideMesh.position.y.toFixed(3)}, Z=${rightSideMesh.position.z.toFixed(3)}`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 3: ПРАВАЯ БОКОВИНА ---
+    // --- БЛОКА 4: ГОЛА ПРОФИЛИ ---
+    // Материал для Гола-профилей
+    const golaMaterial = new THREE.MeshStandardMaterial({
+        color: 0xAAAAAA, // Серый алюминий
+        metalness: 0.8,
+        roughness: 0.4,
+        name: `GolaProfileMat_Tall_${cabinetUUID.substring(0,4)}`
+    });
+    //const golaShapeActualHeightM = 0.058; // Фактическая высота сечения Гола-профиля (58мм)
+    // --- 4.1 Горизонтальные Гола-профили ---
+    if (handleType === 'gola-profile' && verticalGolaSetting === 'none') {
+        const horizontalGolaLength = cabWidthM; // Длина профиля
+
+        if (horizontalGolaLength > 0.01) {
+            // Профиль 1 (нижний или единственный)
+            if (y_start_cutout1 !== -1) { // Если y_start_cutout1 был рассчитан и он валиден
+                const golaProfileMesh1 = createGolaProfileMesh(horizontalGolaLength, golaMaterial, "gola_H_1_tall", cabinetUUID);
+                if (golaProfileMesh1) {
+                    golaProfileMesh1.rotation.y = Math.PI / 2; // Длина профиля по X шкафа
+                    // Позиционирование Y:
+                    const gola1_CenterY_Global = (-cabHeightM / 2 + panelThicknessM) + y_start_cutout1;
+                    // Позиционирование Z:
+                    const gola_Z_rear_plane_Global = cabDepthM / 2;
+                    
+                    golaProfileMesh1.position.set(0, gola1_CenterY_Global, gola_Z_rear_plane_Global);
+                    group.add(golaProfileMesh1);
+                    console.log(`      Горизонтальный Гола-1 добавлен. Y=${gola1_CenterY_Global.toFixed(3)}, Z=${gola_Z_rear_plane_Global.toFixed(3)} (Длина: ${horizontalGolaLength.toFixed(3)})`);
+                }
+            }
+
+            // Профиль 2 (верхний, если есть)
+            if (y_start_cutout2 !== -1) { // Если y_start_cutout2 был рассчитан и он валиден
+                const golaProfileMesh2 = createGolaProfileMesh(horizontalGolaLength, golaMaterial, "gola_H_2_tall", cabinetUUID);
+                if (golaProfileMesh2) {
+                    golaProfileMesh2.rotation.y = Math.PI / 2;
+                    const gola2_CenterY_Global = (-cabHeightM / 2 + panelThicknessM) + y_start_cutout2;
+                    const gola_Z_rear_plane_Global = cabDepthM / 2; // Z такое же
+
+                    golaProfileMesh2.position.set(0, gola2_CenterY_Global, gola_Z_rear_plane_Global);
+                    group.add(golaProfileMesh2);
+                    console.log(`      Горизонтальный Гола-2 добавлен. Y=${gola2_CenterY_Global.toFixed(3)}, Z=${gola_Z_rear_plane_Global.toFixed(3)} (Длина: ${horizontalGolaLength.toFixed(3)})`);
+                }
+            }
+        } else {
+            console.log(`    Горизонтальные Гола-профили не созданы (недостаточная ширина шкафа: ${horizontalGolaLength.toFixed(3)}м).`);
+        }
+    } else {
+        console.log(`    Горизонтальные Гола-профили не требуются (тип ручек: ${handleType}).`);
+    }
+    // --- КОНЕЦ БЛОКА 4 ---
+    // --- НАЧАЛО БЛОКА 5: ПОЛКА ДЛЯ ДУХОВКИ ---
+    console.log(`  [TallOvenMicro] Создание ПОЛКИ для духовки...`);
+
+    const ovenLevel = cabinetData.ovenLevel || 'drawer'; // drawer или countertop
+    let ovenSupportShelfMesh = null;
+
+    // --- 5.1 Расчет размеров полки ---
+    const shelfWidth = cabWidthM - 2 * panelThicknessM;
+    const shelfThickness = panelThicknessM; // "Высота" для createPanel
+    let shelfDepth;
+
+    if (handleType !== 'gola-profile' || verticalGolaSetting !== 'none') {
+        shelfDepth = cabDepthM - 0.040; // Полка короче на 40мм
+        console.log(`    Полка (не Гола): глубина = ${cabDepthM.toFixed(3)} - 0.040 = ${shelfDepth.toFixed(3)}м`);
+    } else if (handleType === 'gola-profile' && verticalGolaSetting === 'none'){ // handleType === 'gola-profile'
+        shelfDepth = cabDepthM - 0.040 - 0.027; // Полка короче на 40мм и еще на 27мм
+        console.log(`    Полка (Гола): глубина = ${cabDepthM.toFixed(3)} - 0.040 - 0.027 = ${shelfDepth.toFixed(3)}м`);
+    }
+
+    if (shelfWidth <= 0 || shelfThickness <= 0 || shelfDepth <= 0) {
+        console.error("  [TallOvenMicro] Некорректные размеры для создания полки духовки.");
+    } else {
+        // --- 5.2 Расчет Y-координаты ЦЕНТРА полки ---
+        let shelf_top_surface_Y_from_side_bottom; // Y ВЕРХНЕЙ плоскости полки от НИЗА БОКОВИНЫ
+
+        if (handleType !== 'gola-profile' || verticalGolaSetting !== 'none') {
+            const baseHeightForStandardCuts = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+            const facadeGapMeters = cabinetData.facadeGap || 0.003;
+            // Высота нижнего фасада, если бы это был стандартный нижний шкаф с двумя ящиками и обычными ручками
+            const height_of_standard_lower_facade = (baseHeightForStandardCuts - facadeGapMeters * 2) / 2; // Ваша формула
+            if (ovenLevel === 'drawer') {
+                shelf_top_surface_Y_from_side_bottom = height_of_standard_lower_facade + 0.008; // Ваша формула: ВЕРХ полки
+            } else {
+                shelf_top_surface_Y_from_side_bottom = height_of_standard_lower_facade * 2 + 0.008 + facadeGapMeters; // Ваша формула: ВЕРХ полки
+            }
+        } else { // handleType === 'gola-profile'
+            // Y ВЕРХА полки = нижняя точка СООТВЕТСТВУЮЩЕГО выреза Гола + высота самого сечения Гола (58мм)
+            // Используем y-координаты вырезов левой боковины (left_y_start_cutout1 или left_y_start_cutout2)
+            let relevant_gola_cut_bottom_Y;
+            if (ovenLevel === 'drawer') {
+                // Духовка на уровне первого ящика, значит полка под первым (нижним) Гола-профилем.
+                // Гола-профиль будет НАД этой полкой.
+                // Значит, ВЕРХ полки = НИЗ первого выреза Гола.
+                relevant_gola_cut_bottom_Y = y_start_cutout1; // Это Y низа первого выреза от низа боковины
+            } else { // ovenLevel === 'countertop'
+                // Духовка на уровне столешницы, значит полка под ВТОРЫМ (верхним) Гола-профилем.
+                // ВЕРХ полки = НИЗ второго выреза Гола.
+                relevant_gola_cut_bottom_Y = y_start_cutout2; // Это Y низа второго выреза от низа боковины
+                // Если второго выреза нет (например, в 'countertop'/'swing'), а духовка сверху,
+                // то полка должна быть под единственным верхним вырезом Гола.
+                // В этом случае left_y_start_cutout1 будет содержать Y этого единственного верхнего выреза.
+                if (relevant_gola_cut_bottom_Y === -1 && y_start_cutout1 !== -1) {
+                    relevant_gola_cut_bottom_Y = y_start_cutout1;
+                }
+            }
+
+            if (relevant_gola_cut_bottom_Y === -1 || relevant_gola_cut_bottom_Y === undefined) {
+                console.warn("    Полка (Гола): не удалось определить Y-координату выреза Гола для позиционирования полки. Используется аварийное значение.");
+                // Аварийное значение: например, середина высоты боковины минус половина высоты духовки
+                const approxOvenHeight = 0.6; // Примерно
+                shelf_top_surface_Y_from_side_bottom = leftSide_Height / 2 - approxOvenHeight / 2;
+            } else {
+                shelf_top_surface_Y_from_side_bottom = relevant_gola_cut_bottom_Y + panelThicknessM + 0.058; // ВЕРХ полки = НИЗ выреза Гола
+                console.log(`    Полка (Гола): Y верха полки (от низа боковины) = ${relevant_gola_cut_bottom_Y.toFixed(3)} (низ выреза Гола)`);
+            }
+        }
+
+        // Глобальная Y-координата центра полки
+        const shelfGlobalY_bottom_of_side = -cabHeightM / 2; // Низ шкафа
+        const shelfCenterY_Global = shelfGlobalY_bottom_of_side + shelf_top_surface_Y_from_side_bottom - (shelfThickness / 2);
+
+        // --- 5.3 Расчет Z-координаты ЦЕНТРА полки ---
+        let shelfCenterZ_Global;
+        const cabinetFrontEdgeGlobalZ = cabDepthM / 2;
+
+        if (handleType !== 'gola-profile' || verticalGolaSetting !== 'none') {
+            shelfCenterZ_Global = cabinetFrontEdgeGlobalZ - shelfDepth / 2;
+            console.log(`    Полка (не Гола): Z-центр = ${cabinetFrontEdgeGlobalZ.toFixed(3)} (перед шкафа) - ${shelfDepth.toFixed(3)}/2 = ${shelfCenterZ_Global.toFixed(3)}м`);
+        } else { // handleType === 'gola-profile'
+            shelfCenterZ_Global = (cabinetFrontEdgeGlobalZ - 0.028) - shelfDepth / 2;
+            console.log(`    Полка (Гола): Z-центр = (${cabinetFrontEdgeGlobalZ.toFixed(3)} (перед шкафа) - 0.028) - ${shelfDepth.toFixed(3)}/2 = ${shelfCenterZ_Global.toFixed(3)}м`);
+        }
+
+
+        // --- 5.4 Создание меша полки ---
+            ovenSupportShelfMesh = createPanel(
+            shelfWidth,
+            shelfThickness, // Толщина полки
+            shelfDepth,
+            cabinetMaterial, // Используем материал корпуса
+            'horizontal',    // Ориентация толщины по Y
+            `oven_support_shelf_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (ovenSupportShelfMesh) {
+            ovenSupportShelfMesh.position.set(0, shelfCenterY_Global, shelfCenterZ_Global);
+            ovenSupportShelfMesh.userData.cabinetUUID = cabinetUUID;
+            group.add(ovenSupportShelfMesh);
+            console.log(`    Полка для духовки создана. Pos: X=0, Y=${shelfCenterY_Global.toFixed(3)}, Z=${shelfCenterZ_Global.toFixed(3)}`);
+        } else {
+            console.error("  [TallOvenMicro] Не удалось создать меш полки для духовки.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 5: ПОЛКА ДЛЯ ДУХОВКИ ---
+    // --- НАЧАЛО БЛОКА 6: ПОЛКА ДЛЯ МИКРОВОЛНОВКИ ---
+    // Эта полка создается, только если есть предыдущая полка (ovenSupportShelfMesh)
+    // и если в конфигурации шкафа предусмотрена микроволновка (например, cabinetData.microwaveType !== 'none')
+    let microShelfMesh = null;
+
+    if (ovenSupportShelfMesh && (cabinetData.microwaveType && cabinetData.microwaveType !== 'none')) {
+
+        // --- 6.1 Расчет размеров полки для СВЧ ---
+        const microShelfWidth = cabWidthM - 2 * panelThicknessM - 0.002; // Зазор по 1мм
+        const microShelfThickness = panelThicknessM; // "Высота" для createPanel
+        const microShelfDepth = cabDepthM - 0.060;   // Короче на 60мм
+
+        if (microShelfWidth <= 0 || microShelfThickness <= 0 || microShelfDepth <= 0) {
+            console.error("  [TallOvenMicro] Некорректные размеры для создания полки СВЧ.");
+        } else {
+            // --- 6.2 Расчет Y-координаты ЦЕНТРА полки для СВЧ ---
+            // Y-координата ВЕРХА полки для духовки (из Блока 5)
+            const ovenShelf_TopSurfaceY_Global = ovenSupportShelfMesh.position.y + (ovenSupportShelfMesh.geometry.parameters.height / 2); // shelfThickness / 2
+
+            // Высота самой духовки + небольшой зазор над ней.
+            // Используем cabinetData.ovenType для определения высоты духовки.
+            let ovenActualMountingHeightM;
+            if (cabinetData.ovenType === '600') {
+                ovenActualMountingHeightM = 0.595 + 0.001; // 595мм духовка + 1мм зазор
+            } else if (cabinetData.ovenType === '450') {
+                ovenActualMountingHeightM = 0.450 + 0.001; // 450мм духовка + 1мм зазор
+            } else { // Если ovenType не задан или 'none', берем высоту 600мм духовки как худший случай для расчета
+                console.warn(`    [TallOvenMicro] Тип духовки (ovenType) не определен или 'none' для расчета высоты под СВЧ. Используется 0.596м.`);
+                ovenActualMountingHeightM = 0.380;
+            }
+            console.log(`    Полка СВЧ: Высота духовки для расчета = ${ovenActualMountingHeightM.toFixed(3)}м`);
+
+            // Низ полки СВЧ будет на уровне верха пространства под духовку
+            const microShelf_BottomSurfaceY_Global = ovenShelf_TopSurfaceY_Global + ovenActualMountingHeightM;
+            // Центр полки СВЧ
+            const microShelfCenterY_Global = microShelf_BottomSurfaceY_Global + microShelfThickness / 2;
+            console.log(`    Полка СВЧ: Y верха полки духовки=${ovenShelf_TopSurfaceY_Global.toFixed(3)}, Y низа полки СВЧ=${microShelf_BottomSurfaceY_Global.toFixed(3)}, Y центра полки СВЧ=${microShelfCenterY_Global.toFixed(3)}`);
+
+            // --- 6.3 Расчет Z-координаты ЦЕНТРА полки для СВЧ ---
+            // "передний торец полки по переднему торцу шкафа"
+            // Это значит, что 60мм отступа сзади.
+            const cabinetFrontEdgeGlobalZ = cabDepthM / 2; // Передний край шкафа (внутренний, у боковин)
+            const microShelfCenterZ_Global = cabinetFrontEdgeGlobalZ - microShelfDepth / 2;
+            console.log(`    Полка СВЧ: Z-центр = ${cabinetFrontEdgeGlobalZ.toFixed(3)} (перед шкафа) - ${microShelfDepth.toFixed(3)}/2 = ${microShelfCenterZ_Global.toFixed(3)}м`);
+
+            // --- 6.4 Создание меша полки для СВЧ ---
+                microShelfMesh = createPanel(
+                microShelfWidth,
+                microShelfThickness,
+                microShelfDepth,
+                cabinetMaterial, // Используем материал корпуса
+                'horizontal',
+                `microwave_shelf_${cabinetUUID.substring(0,4)}`
+            );
+
+            if (microShelfMesh) {
+                microShelfMesh.position.set(0, microShelfCenterY_Global, microShelfCenterZ_Global);
+                microShelfMesh.userData.cabinetUUID = cabinetUUID;
+                group.add(microShelfMesh);
+                console.log(`    Полка для СВЧ создана. Pos: X=0, Y=${microShelfCenterY_Global.toFixed(3)}, Z=${microShelfCenterZ_Global.toFixed(3)}`);
+            } else {
+                console.error("  [TallOvenMicro] Не удалось создать меш полки для СВЧ.");
+            }
+        }
+    } else {
+        if (!ovenSupportShelfMesh) {
+            console.log(`  [TallOvenMicro] Полка для СВЧ не создается: отсутствует полка для духовки.`);
+        }
+        if (!cabinetData.microwaveType || cabinetData.microwaveType === 'none') {
+            console.log(`  [TallOvenMicro] Полка для СВЧ не создается: тип СВЧ не указан или 'none'.`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 6: ПОЛКА ДЛЯ МИКРОВОЛНОВКИ ---
+    // --- НАЧАЛО БЛОКА 7: ПОЛКА НАД СВЧ (ДНО ВЕРХНЕЙ СЕКЦИИ) ---
+    
+    // --- 7.1 Расчет размеров полки ---
+    const tsbs_Width = cabWidthM - 2 * panelThicknessM;     // tsbs = Top Section Bottom Shelf
+    const tsbs_Thickness = panelThicknessM;                 // "Высота" для createPanel
+    const tsbs_Depth = cabDepthM - 0.060 - panelThicknessM;; // Пока считаем
+    let topSectionBottomShelfMesh = null;
+
+    if (tsbs_Width <= 0 || tsbs_Thickness <= 0 || tsbs_Depth <= 0) {
+        console.error("  [TallOvenMicro] Блок 7: Некорректные размеры для создания дна верхней секции.");
+    } else {
+        // --- 7.2 Расчет Y-координаты ЦЕНТРА полки ---
+        let top_of_space_below_Y_Global; // Верхняя точка пространства ПОД этой полкой
+
+        if (cabinetData.microwaveType && cabinetData.microwaveType !== 'none' && microShelfMesh) {
+            // Случай 1: СВЧ ЕСТЬ, и полка для нее была создана
+            const microShelf_TopSurfaceY_Global = microShelfMesh.position.y + (microShelfMesh.geometry.parameters.height / 2);
+            
+            let microwaveActualMountingHeightM;
+            if (cabinetData.microwaveType === '362') microwaveActualMountingHeightM = 0.362 + 0; // 362мм СВЧ + 1мм зазор
+            else if (cabinetData.microwaveType === '380') microwaveActualMountingHeightM = 0.380 + 0; // 380мм СВЧ + 1мм зазор
+            else { // Неизвестный тип СВЧ, берем больший для безопасности
+                console.warn(`    [TallOvenMicro] Блок 7: Неизвестный тип СВЧ (${cabinetData.microwaveType}) для расчета высоты. Используется 0.381м.`);
+                microwaveActualMountingHeightM = 0.380;
+            }
+            top_of_space_below_Y_Global = microShelf_TopSurfaceY_Global + microwaveActualMountingHeightM;
+            console.log(`    Дно в/секц (СВЧ есть): Y верха полки СВЧ=${microShelf_TopSurfaceY_Global.toFixed(3)}, Высота СВЧ=${microwaveActualMountingHeightM.toFixed(3)}, Y верха пространства под СВЧ=${top_of_space_below_Y_Global.toFixed(3)}`);
+
+        } else {
+            // Случай 2: СВЧ НЕТ (или ее полка не создана). Рассчитываем от полки духовки.
+            if (!ovenSupportShelfMesh) { // ovenSupportShelfMesh должен быть объявлен на уровне функции
+                console.error("  [TallOvenMicro] Блок 7: Ошибка - полка для духовки (ovenSupportShelfMesh) не найдена для расчета позиции дна верхней секции!");
+                // В этом случае позиционирование будет некорректным, но попытаемся создать полку хотя бы где-то
+                top_of_space_below_Y_Global = 0; // Аварийное значение
+            } else {
+                const ovenShelf_TopSurfaceY_Global_B7 = ovenSupportShelfMesh.position.y + (ovenSupportShelfMesh.geometry.parameters.height / 2); // Верх полки духовки
+                
+                let ovenActualMountingHeightM_B7;
+                if (cabinetData.ovenType === '600') ovenActualMountingHeightM_B7 = 0.595 + 0.001;
+                else if (cabinetData.ovenType === '450') ovenActualMountingHeightM_B7 = 0.450 + 0.001;
+                else ovenActualMountingHeightM_B7 = 0.380;
+
+                const imaginary_microShelf_BottomY_Global = ovenShelf_TopSurfaceY_Global_B7 + ovenActualMountingHeightM_B7;
+                //const imaginary_microShelf_TopY_Global = imaginary_microShelf_BottomY_Global + panelThicknessM; // Добавляем толщину "воображаемой" полки СВЧ
+
+                // Высота "воображаемой" СВЧ (берем 380мм по умолчанию, если СВЧ нет)
+                //const microwaveActualMountingHeightM_default = 0.380 + 0;
+                top_of_space_below_Y_Global = imaginary_microShelf_BottomY_Global;
+                //console.log(`      Y верха полки дух.=${ovenShelf_TopSurfaceY_Global_B7.toFixed(3)}, Y верха вообр.полки СВЧ=${imaginary_microShelf_TopY_Global.toFixed(3)}, Y верха пространства под СВЧ=${top_of_space_below_Y_Global.toFixed(3)}`);
+            }
+        }
+
+        // Низ текущей полки (дна верхней секции) будет на top_of_space_below_Y_Global
+        const tsbs_CenterY_Global = top_of_space_below_Y_Global + tsbs_Thickness / 2;
+
+        // --- 7.3 Расчет Z-координаты ЦЕНТРА полки ---
+        // "передний торец полки по переднему торцу шкафа"
+        // Глубина полки tsbs_Depth (сейчас = cabDepthM - 0.060)
+        const cabinetFrontEdgeGlobalZ_B7 = cabDepthM / 2;
+        const tsbs_CenterZ_Global = cabinetFrontEdgeGlobalZ_B7 - tsbs_Depth / 2;
+        // console.log(`    Дно в/секц: Z-центр = ${cabinetFrontEdgeGlobalZ_B7.toFixed(3)} (перед шкафа) - ${tsbs_Depth.toFixed(3)}/2 = ${tsbs_CenterZ_Global.toFixed(3)}м`);
+
+        // --- 7.4 Создание меша полки ---
+        topSectionBottomShelfMesh = createPanel(
+            tsbs_Width,
+            tsbs_Thickness,
+            tsbs_Depth,
+            cabinetMaterial,
+            'horizontal',
+            `top_section_bottom_shelf_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (topSectionBottomShelfMesh) {
+            topSectionBottomShelfMesh.position.set(0, tsbs_CenterY_Global, tsbs_CenterZ_Global);
+            topSectionBottomShelfMesh.userData.cabinetUUID = cabinetUUID;
+            group.add(topSectionBottomShelfMesh);
+            console.log(`    Дно верхней секции создано. Pos: X=0, Y=${tsbs_CenterY_Global.toFixed(3)}, Z=${tsbs_CenterZ_Global.toFixed(3)}`);
+        } else {
+            console.error("  [TallOvenMicro] Блок 7: Не удалось создать меш дна верхней секции.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 7: ПОЛКА НАД СВЧ (ДНО ВЕРХНЕЙ СЕКЦИИ) ---
+    // --- НАЧАЛО БЛОКА 8: КРЫША ШКАФА ---
+    console.log(`  [TallOvenMicro] Создание КРЫШИ шкафа...`);
+    let roofMesh = null;
+
+    // --- 8.1 Расчет размеров крыши ---
+    const roof_Width = cabWidthM - 2 * panelThicknessM;
+    const roof_Thickness = panelThicknessM; // "Высота" для createPanel
+    const roof_Depth = cabDepthM - 0.060 - panelThicknessM;   // Такая же глубина, как у полки дна верхней секции
+
+    console.log(`    Крыша: W=${roof_Width.toFixed(3)}, H(толщина)=${roof_Thickness.toFixed(3)}, D=${roof_Depth.toFixed(3)}`);
+
+    if (roof_Width <= 0 || roof_Thickness <= 0 || roof_Depth <= 0) {
+        console.error("  [TallOvenMicro] Блок 8: Некорректные размеры для создания крыши.");
+    } else {
+        // --- 8.2 Расчет Y-координаты ЦЕНТРА крыши ---
+        // Верхняя грань крыши на Y_глоб = cabHeightM / 2
+        const roof_CenterY_Global = cabHeightM / 2 - roof_Thickness / 2;
+        console.log(`    Крыша: Y-центр = ${cabHeightM / 2 .toFixed(3)} (верх шкафа) - ${roof_Thickness.toFixed(3)}/2 = ${roof_CenterY_Global.toFixed(3)}м`);
+
+        // --- 8.3 Расчет Z-координаты ЦЕНТРА крыши ---
+        // Передний торец крыши по переднему торцу шкафа, отступ 60мм сзади
+        const cabinetFrontEdgeGlobalZ_B8 = cabDepthM / 2;
+        const roof_CenterZ_Global = cabinetFrontEdgeGlobalZ_B8 - roof_Depth / 2;
+        console.log(`    Крыша: Z-центр = ${cabinetFrontEdgeGlobalZ_B8.toFixed(3)} (перед шкафа) - ${roof_Depth.toFixed(3)}/2 = ${roof_CenterZ_Global.toFixed(3)}м`);
+
+        // --- 8.4 Создание меша крыши ---
+        roofMesh = createPanel(
+            roof_Width,
+            roof_Thickness, // Толщина для createPanel
+            roof_Depth,
+            cabinetMaterial, // Используем материал корпуса
+            'horizontal',    // Ориентация толщины по Y
+            `roof_tall_oven_micro_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (roofMesh) {
+            roofMesh.position.set(0, roof_CenterY_Global, roof_CenterZ_Global); // X=0 (центр шкафа)
+            roofMesh.userData.cabinetUUID = cabinetUUID;
+            roofMesh.userData.panelType = 'roof'; // Добавляем тип панели
+            group.add(roofMesh);
+            console.log(`    Крыша создана. Pos: X=0, Y=${roof_CenterY_Global.toFixed(3)}, Z=${roof_CenterZ_Global.toFixed(3)}`);
+        } else {
+            console.error("  [TallOvenMicro] Блок 8: Не удалось создать меш крыши.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 8: КРЫША ШКАФА ---
+    // --- НАЧАЛО БЛОКА 9: ЗАДНЯЯ СТЕНКА ВЕРХНЕЙ СЕКЦИИ ---
+    console.log(`  [TallOvenMicro] Создание ЗАДНЕЙ СТЕНКИ ВЕРХНЕЙ СЕКЦИИ...`);
+
+    // Нам нужен доступ к topSectionBottomShelfMesh из Блока 7
+    //let topSectionBottomShelfMesh_from_Block7 = null;
+    let tsbs_Thickness_from_Block7 = panelThicknessM; // Дефолт, если полка не найдена
+    let tsbs_Depth_from_Block7 = cabDepthM - 0.060 - panelThicknessM;   // Дефолт, если полка не найдена
+   
+
+    if (!topSectionBottomShelfMesh) {
+        console.error("  [TallOvenMicro] Блок 9: Ошибка - дно верхней секции (topSectionBottomShelfMesh) не найдено! Задняя стенка не будет создана.");
+    } else {
+        // --- 9.1 Расчет размеров задней стенки ---
+        // Ширина такая же, как у дна верхней секции
+        const rpots_Width = topSectionBottomShelfMesh.geometry.parameters.width; // rpots = Rear Panel Of Top Section
+        
+        // Высота: от низа дна верхней секции до верха шкафа, минус 1мм
+        const bottom_of_tsbs_Y_Global = topSectionBottomShelfMesh.position.y - (tsbs_Thickness_from_Block7 / 2);
+        const top_of_cabinet_Y_Global = cabHeightM / 2;
+        const rpots_Height = top_of_cabinet_Y_Global - bottom_of_tsbs_Y_Global - 0.001;
+
+        const rpots_Thickness = panelThicknessM; // Толщина задней стенки (это будет "глубина" для createPanel frontal)
+
+        console.log(`    Задняя стенка в/с: W=${rpots_Width.toFixed(3)}, H=${rpots_Height.toFixed(3)}, Thickness(глубина)=${rpots_Thickness.toFixed(3)}`);
+
+        if (rpots_Width <= 0 || rpots_Height <= 0 || rpots_Thickness <= 0) {
+            console.error("  [TallOvenMicro] Блок 9: Некорректные размеры для создания задней стенки верхней секции.");
+        } else {
+            // --- 9.2 Расчет Y-координаты ЦЕНТРА задней стенки ---
+            // Низ задней стенки на уровне низа дна верхней секции
+            const rpots_CenterY_Global = bottom_of_tsbs_Y_Global + rpots_Height / 2;
+            console.log(`    Задняя стенка в/с: Y-центр = ${bottom_of_tsbs_Y_Global.toFixed(3)} (низ дна в/с) + ${rpots_Height.toFixed(3)}/2 = ${rpots_CenterY_Global.toFixed(3)}м`);
+
+            // --- 9.3 Расчет Z-координаты ЦЕНТРА задней стенки ---
+            // Передняя грань задней стенки совпадает с задней гранью дна верхней секции
+            const rear_face_of_tsbs_Z_Global = topSectionBottomShelfMesh.position.z - (tsbs_Depth_from_Block7 / 2);
+            // Центр задней стенки по Z
+            const rpots_CenterZ_Global = rear_face_of_tsbs_Z_Global - rpots_Thickness / 2;
+            console.log(`    Задняя стенка в/с: Z-центр = ${rear_face_of_tsbs_Z_Global.toFixed(3)} (зад дна в/с) + ${rpots_Thickness.toFixed(3)}/2 = ${rpots_CenterZ_Global.toFixed(3)}м`);
+
+            // --- 9.4 Создание меша задней стенки ---
+            const rearPanelTopSectionMesh = createPanel(
+                rpots_Width,
+                rpots_Height,
+                rpots_Thickness, // Толщина задней стенки (будет глубиной для createPanel с 'frontal')
+                cabinetMaterial, // Используем материал корпуса (или специальный материал для задних стенок)
+                'frontal',       // Ориентация толщины по Z
+                `rear_panel_top_section_${cabinetUUID.substring(0,4)}`
+            );
+
+            if (rearPanelTopSectionMesh) {
+                rearPanelTopSectionMesh.position.set(0, rpots_CenterY_Global, rpots_CenterZ_Global); // X=0 (центр шкафа)
+                rearPanelTopSectionMesh.userData.cabinetUUID = cabinetUUID;
+                rearPanelTopSectionMesh.userData.panelType = 'rearPanelTopSection';
+                group.add(rearPanelTopSectionMesh);
+                console.log(`    Задняя стенка верхней секции создана. Pos: X=0, Y=${rpots_CenterY_Global.toFixed(3)}, Z=${rpots_CenterZ_Global.toFixed(3)}`);
+            } else {
+                console.error("  [TallOvenMicro] Блок 9: Не удалось создать меш задней стенки верхней секции.");
+            }
+        }
+    }
+    // --- КОНЕЦ БЛОКА 9: ЗАДНЯЯ СТЕНКА ВЕРХНЕЙ СЕКЦИИ ---
+    // --- НАЧАЛО БЛОКА 10: ВЕРХНИЕ ПОЛКИ (НАД topSectionBottomShelfMesh, ПОД КРЫШЕЙ ШКАФА) ---
+    console.log(`  [TallOvenMicro] Блок 9: Создание ВЕРХНИХ ПОЛОК...`);
+
+    // Убедимся, что topSectionBottomShelfMesh существует и имеет геометрию
+    if (!topSectionBottomShelfMesh || !topSectionBottomShelfMesh.geometry || !topSectionBottomShelfMesh.geometry.parameters) {
+        console.warn("    [TallOvenMicro][Блок 9] topSectionBottomShelfMesh не определена или не имеет корректной геометрии. Верхние полки не будут созданы.");
+    } else {
+        const topShelvesCount = parseInt(cabinetData.topShelves) || 0; // 'none' или не число станет 0
+
+        if (topShelvesCount > 0) {
+            // --- 10.1 Расчет размеров одной полки ---
+            const shelfWidth = cabWidthM - 2 * panelThicknessM - 0.002; // -2мм зазор
+            const shelfThickness = panelThicknessM; // Толщина полки (это будет высота для createPanel)
+            
+            // Глубина полки = глубина опорной нижней полки секции минус 5мм
+            // Используем параметры геометрии опорной полки
+            const supportShelfDepth = topSectionBottomShelfMesh.geometry.parameters.depth;
+            const shelfDepth = supportShelfDepth - 0.005;
+
+            console.log(`    [Блок 9] Верхние полки: Кол-во=${topShelvesCount}, W=${shelfWidth.toFixed(3)}, H(толщина)=${shelfThickness.toFixed(3)}, D=${shelfDepth.toFixed(3)}`);
+
+            if (shelfWidth <= 0 || shelfDepth <= 0) {
+                console.warn("      [Блок 9] Некорректные размеры для верхних полок (ширина или глубина <= 0). Полки не будут созданы.");
+            } else {
+                // --- 10.2 Расчет позиций по Y ---
+                const cabinetTopGlobalY = cabHeightM / 2; // Верхняя точка всего шкафа-пенала в локальных координатах группы
+                
+                // Y-координата ВЕРХНЕЙ плоскости опорной полки (topSectionBottomShelfMesh)
+                const supportShelfThickness = topSectionBottomShelfMesh.geometry.parameters.height; // Предполагаем, что .height - это толщина
+                const topEdgeOfSupportShelfY = topSectionBottomShelfMesh.position.y + supportShelfThickness / 2;
+
+                // Доступная высота для размещения полок: от верха опорной полки до НИЗА КРЫШИ шкафа.
+                // Предполагаем, что крыша шкафа (еще не создана в этом коде) будет иметь толщину panelThicknessM.
+                const availableHeightForShelves = cabinetTopGlobalY - panelThicknessM - topEdgeOfSupportShelfY;
+                console.log(`      [Блок 9] Доступная высота под полки (между опорной и крышей): ${availableHeightForShelves.toFixed(3)}м`);
+
+                // Проверка, достаточно ли места для полок и минимальных зазоров
+                // (topShelvesCount * shelfThickness) - общая высота самих полок
+                // ((topShelvesCount - 1) * 0.010) - минимальные зазоры МЕЖДУ полками (если полок > 1)
+                // (2 * 0.005) - минимальные зазоры над/под крайними полками (по 5мм)
+                const minRequiredHeight = (topShelvesCount * shelfThickness) + 
+                                        (topShelvesCount > 1 ? (topShelvesCount - 1) * 0.010 : 0) + 
+                                        (2 * 0.005);
+
+                if (availableHeightForShelves < minRequiredHeight) {
+                    console.warn(`      [Блок 9] Недостаточно доступной высоты (${availableHeightForShelves.toFixed(3)}м) для ${topShelvesCount} полок (требуется мин ${minRequiredHeight.toFixed(3)}м). Полки не будут созданы.`);
+                } else {
+                    // Расстояние между ЦЕНТРАМИ соседних полок, или между опорной/крышей и центром ближайшей полки
+                    const shelfSpacingY_raw = availableHeightForShelves / (topShelvesCount + 1);
+                    const shelfSpacingY_mm = Math.round(shelfSpacingY_raw * 1000);
+                    const shelfSpacingY = shelfSpacingY_mm / 1000;
+                    console.log(`      [Блок 9] Шаг расположения полок (shelfSpacingY): ${shelfSpacingY.toFixed(3)}м (${shelfSpacingY_mm}мм)`);
+
+                    // --- 9.3 Создание полок в цикле ---
+                    for (let i = 1; i <= topShelvesCount; i++) {
+                        const shelfName = `top_shelf_${i}_tall_oven_micro_${cabinetUUID.substring(0,4)}`;
+                        const topShelfMesh = createPanel(
+                            shelfWidth,
+                            shelfThickness, // высота для createPanel - это толщина полки
+                            shelfDepth,
+                            cabinetMaterial, // Используем общий материал корпуса
+                            'horizontal',    // Ориентация толщины по Y
+                            shelfName
+                        );
+
+                        if (topShelfMesh) {
+                            // Позиционирование
+                            const shelfCenterX = 0; // По центру ширины шкафа
+
+                            // Y-координата НИЖНЕЙ плоскости i-й полки, отсчитывая от ВЕРХА опорной полки
+                            const bottomPlaneOfCurrentShelfY = topEdgeOfSupportShelfY + (shelfSpacingY * i);
+                            // Y-координата ЦЕНТРА i-й полки
+                            const shelfCenterY_i = bottomPlaneOfCurrentShelfY - (shelfSpacingY / 2) + (shelfThickness / 2); // Скорректировано для центрирования в своем "слоте"
+                                                                                                    // Проще: низ опорной + шаг*i + толщина/2
+                            // Пересчет shelfCenterY_i по вашей формуле:
+                            // расположение первой полки по Y = topSectionBottomShelfMesh.верхняя грань + шагРасположенияПолок * 1; (это низ полки)
+                            // shelfCenterY_i = (topEdgeOfSupportShelfY + shelfSpacingY * i) + shelfThickness / 2;
+                            const currentShelfBottomY = topEdgeOfSupportShelfY + shelfSpacingY * i;
+                            const currentShelfCenterY = currentShelfBottomY + shelfThickness / 2;
+
+
+                            // Z-координата ЗАДНЕЙ плоскости i-й полки = задняя плоскость опорной полки
+                            const rearFaceZ_SupportShelf = topSectionBottomShelfMesh.position.z - supportShelfDepth / 2;
+                            // Z-координата ЦЕНТРА i-й полки
+                            const shelfCenterZ_i = rearFaceZ_SupportShelf + shelfDepth / 2;
+
+                            topShelfMesh.position.set(shelfCenterX, currentShelfCenterY, shelfCenterZ_i);
+                            topShelfMesh.userData.cabinetUUID = cabinetUUID;
+                            group.add(topShelfMesh);
+                            console.log(`        [Блок 9] Верхняя полка ${i} создана. Pos: Y=${currentShelfCenterY.toFixed(3)}, Z=${shelfCenterZ_i.toFixed(3)}`);
+                        }
+                    }
+                }
+            }
+        } else {
+            console.log(`    [Блок 9] Верхние полки не требуются (кол-во: ${topShelvesCount}).`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 10: ВЕРХНИЕ ПОЛКИ ---
+    // --- НАЧАЛО БЛОКА 11: ФАСАДЫ ПОД ДУХОВКОЙ ---
+    const underOvenFill = cabinetData.underOvenFill || 'drawers';
+    const facadeGapMeters = cabinetData.facadeGap / 1;
+    // 1. Получение материала и толщины фасада
+    const { material: facadeMaterialToClone, thickness: facadeThicknessMeters } = getFacadeMaterialAndThickness(cabinetData);
+    const textureDirection = cabinetData.textureDirection || 'vertical';
+
+    // 2. Базовая высота для секции под духовкой (эквивалент высоты фасадов стандартного нижнего короба)
+    const baseSectionHeightM = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+
+    const tb9HandleHeightMeters = 0.030;
+    let facadesToCreateData = []; // { yPosBottom: number, height: number, width: number, addTB9Handle: boolean, namePrefix: string }
+
+    // 3. Определение количества, высот и Y-позиций фасадов
+    const facadeWidth = cabWidthM - facadeGapMeters; // Ширина фасада (один общий зазор по бокам шкафа)
+    let addTB9Global = (handleType === 'aluminum-tv9');
+
+    if (ovenLevel === 'drawer') {
+        // --- Сценарий 1: Духовка на уровне первого ящика (снизу ОДИН фасад) ---
+        // Высота этого одного фасада = высота одного фасада стандартного нижнего ящика
+        // (если в baseSectionHeightM помещается два ящика и два Гола/ручки/зазора)
+        let currentFacadeHeight = 0;
+        if (handleType === 'standard') {
+            currentFacadeHeight = (baseSectionHeightM - 2 * facadeGapMeters) / 2; // Высота одного из двух фасадов
+        } else if (handleType === 'gola-profile') {
+            currentFacadeHeight = (baseSectionHeightM - 2 * actualGolaHeightMeters) / 2;
+        } else if (handleType === 'aluminum-tv9') {
+            currentFacadeHeight = (baseSectionHeightM - 2 * tb9HandleHeightMeters - 2 * facadeGapMeters) / 2;
+        }
+        
+        if (currentFacadeHeight < 0.05) { // Минимальная высота фасада
+            console.warn(`      [Блок 11 / Сценарий 1] Расчетная высота фасада (${currentFacadeHeight.toFixed(3)}м) слишком мала. Установлена мин. 0.05м.`);
+            currentFacadeHeight = 0.05;
+        }
+
+        const yPosBottomFacade = -cabHeightM / 2; // Низ фасада = низ пенала
+        facadesToCreateData.push({
+            yPosBottom: yPosBottomFacade,
+            height: currentFacadeHeight,
+            width: facadeWidth,
+            addTB9Handle: addTB9Global,
+            namePrefix: "bottom_single_facade"
+        });
+
+    } else if (ovenLevel === 'countertop') {
+        // --- Сценарий 2: Духовка на уровне столешницы ---
+        if (underOvenFill === 'drawers') {
+            // --- Сценарий 2а: Под духовкой выдвижные ящики (ДВА фасада) ---
+            let facadeHeightEach = 0;
+            if (handleType === 'standard') {
+                facadeHeightEach = (baseSectionHeightM - 2 * facadeGapMeters) / 2;
+            } else if (handleType === 'gola-profile') {
+                facadeHeightEach = (baseSectionHeightM - 2 * actualGolaHeightMeters) / 2;
+            } else if (handleType === 'aluminum-tv9') {
+                facadeHeightEach = (baseSectionHeightM - 2 * tb9HandleHeightMeters - 2 * facadeGapMeters) / 2;
+            }
+
+            if (facadeHeightEach < 0.05) {
+                console.warn(`      [Блок 11 / Сценарий 2а] Расчетная высота фасада ящика (${facadeHeightEach.toFixed(3)}м) слишком мала. Установлена мин. 0.05м.`);
+                facadeHeightEach = 0.05;
+            }
+            
+            // Нижний фасад
+            const yPosBottomLower = -cabHeightM / 2;
+            facadesToCreateData.push({
+                yPosBottom: yPosBottomLower,
+                height: facadeHeightEach,
+                width: facadeWidth,
+                addTB9Handle: addTB9Global,
+                namePrefix: "bottom_drawer_facade_1"
+            });
+
+            // Верхний фасад
+            const yTopOfLowerFacade = yPosBottomLower + facadeHeightEach;
+            let gapOrHandleAboveLower = 0;
+            if (handleType === 'standard') gapOrHandleAboveLower = facadeGapMeters;
+            else if (handleType === 'gola-profile') gapOrHandleAboveLower = actualGolaHeightMeters;
+            else if (handleType === 'aluminum-tv9') gapOrHandleAboveLower = tb9HandleHeightMeters + facadeGapMeters;
+            
+            const yPosBottomUpper = yTopOfLowerFacade + gapOrHandleAboveLower;
+            facadesToCreateData.push({
+                yPosBottom: yPosBottomUpper,
+                height: facadeHeightEach, // Второй фасад той же высоты
+                width: facadeWidth,
+                addTB9Handle: addTB9Global,
+                namePrefix: "bottom_drawer_facade_2"
+            });
+
+        } else if (underOvenFill === 'swing') {
+            // --- Сценарий 2б: Под духовкой распашная дверь (ОДИН фасад) ---
+            let swingFacadeHeight = 0;
+            if (handleType === 'standard') {
+                swingFacadeHeight = baseSectionHeightM - facadeGapMeters; // Зазор сверху
+            } else if (handleType === 'gola-profile') {
+                swingFacadeHeight = baseSectionHeightM - actualGolaHeightMeters; // Гола сверху
+            } else if (handleType === 'aluminum-tv9') {
+                swingFacadeHeight = baseSectionHeightM - facadeGapMeters - tb9HandleHeightMeters; // ТВ9 сверху + зазор
+            }
+
+            if (swingFacadeHeight < 0.05) {
+                console.warn(`      [Блок 11 / Сценарий 2б] Расчетная высота распашного фасада (${swingFacadeHeight.toFixed(3)}м) слишком мала. Установлена мин. 0.05м.`);
+                swingFacadeHeight = 0.05;
+            }
+
+            const yPosBottomFacade = -cabHeightM / 2;
+            facadesToCreateData.push({
+                yPosBottom: yPosBottomFacade,
+                height: swingFacadeHeight,
+                width: facadeWidth,
+                addTB9Handle: addTB9Global,
+                namePrefix: "bottom_swing_facade"
+            });
+        }
+    }
+
+    // 4. Создание мешей фасадов
+    if (facadesToCreateData.length > 0) {
+        facadesToCreateData.forEach((facadeData, index) => {
+            if (facadeData.height <= 0 || facadeData.width <=0) {
+                console.warn(`      Пропуск создания фасада ${index + 1} из-за некорректных размеров: H=${facadeData.height}, W=${facadeData.width}`);
+                return; // Пропускаем этот фасад
+            }
+
+            const facadeMesh = createPanel(
+                facadeData.width,
+                facadeData.height,
+                facadeThicknessMeters,
+                facadeMaterialToClone.clone(), // Клонируем материал для каждого фасада
+                'frontal',
+                `${facadeData.namePrefix}_${index}_${cabinetUUID.substring(0,4)}`
+            );
+
+            if (facadeMesh) {
+                // Позиционирование
+                facadeMesh.position.x = 0; // Центр по X шкафа
+                facadeMesh.position.y = facadeData.yPosBottom + facadeData.height / 2; // Центр фасада по Y
+                facadeMesh.position.z = cabDepthM / 2 + facadeThicknessMeters / 2; // Передняя плоскость корпуса + половина толщины фасада
+
+                facadeMesh.userData.cabinetUUID = cabinetUUID;
+                facadeMesh.userData.isFacade = true; // Доп. флаг, если нужен
+                if (facadeData.addTB9Handle) {
+                    facadeMesh.userData.needsTB9Handle = true;
+                }
+
+                // --- НАЧАЛО: Логика добавления ручки ТВ9 ---
+                if (facadeData.addTB9Handle) { // Этот флаг устанавливался при расчете facadeData
+                    facadeMesh.userData.needsTB9Handle = true; // Отмечаем, что у этого фасада должна быть ручка
+
+                    const handleLengthMeters_tv9 = facadeData.width; // Длина ручки = ширина фасада
+                    const tb9ProfileWidthMm = 19;  // Ширина сечения профиля ручки по оси "вперед-назад" от фасада
+                    const tb9ProfileHeightMm = 30; // Высота сечения профиля ручки
+
+                    const handleShape_tv9 = new THREE.Shape();
+                    handleShape_tv9.moveTo(0, 0);              // Низ-зад профиля
+                    handleShape_tv9.lineTo(tb9ProfileWidthMm, 0); // Низ-перед
+                    handleShape_tv9.lineTo(tb9ProfileWidthMm, tb9ProfileHeightMm); // Верх-перед
+                    handleShape_tv9.lineTo(tb9ProfileWidthMm - 1.5, tb9ProfileHeightMm); // Внутрь паза сверху
+                    handleShape_tv9.lineTo(tb9ProfileWidthMm - 1.5, 1);               // Вниз по пазу
+                    handleShape_tv9.lineTo(0, 1);              // К задней стенке паза
+                    handleShape_tv9.closePath();             // Замыкаем на (0,0)
+
+                    const handleExtrudeSettings_tv9 = {
+                        steps: 1,
+                        depth: handleLengthMeters_tv9 * 1000, // Глубина экструзии в мм
+                        bevelEnabled: false
+                    };
+                    let handleGeometry_tv9 = null;
+                    try {
+                        handleGeometry_tv9 = new THREE.ExtrudeGeometry(handleShape_tv9, handleExtrudeSettings_tv9);
+                        // Центрируем по оси экструзии (длине ручки) и масштабируем в метры
+                        handleGeometry_tv9.translate(0, 0, -handleLengthMeters_tv9 * 1000 / 2);
+                        handleGeometry_tv9.scale(1 / 1000, 1 / 1000, 1 / 1000);
+                    } catch (e) {
+                        console.error(`      [Блок 11] Ошибка создания геометрии для ручки ТВ9 фасада ${index + 1}:`, e);
+                    }
+
+                    if (handleGeometry_tv9) {
+                        const handleMesh_tv9 = new THREE.Mesh(handleGeometry_tv9, golaMaterial.clone()); // Используем golaMaterial или специальный для ручек
+                        handleMesh_tv9.name = `handle_TV9_${facadeData.namePrefix}_${index}_${cabinetUUID.substring(0,4)}`;
+                        handleMesh_tv9.userData = {
+                            isCabinetPart: true,
+                            objectType: 'cabinetHandle',
+                            handleType: 'tv9',
+                            cabinetUUID: cabinetUUID,
+                            parentFacadeUUID: facadeMesh.uuid // Связь с фасадом (если нужно)
+                        };
+
+                        // Поворот: длина ручки (бывшая Z экструзии) должна идти вдоль X шкафа (ширины фасада)
+                        handleMesh_tv9.rotation.y = Math.PI / 2;
+
+                        // Позиционирование:
+                        // Ручка крепится СВЕРХУ фасада.
+                        // Локальный Y=0 ручки (низ профиля) должен быть на уровне верха фасада.
+                        const yTopOfFacade = facadeMesh.position.y + facadeData.height / 2;
+                        handleMesh_tv9.position.y = yTopOfFacade;
+
+                        // X ручки совпадает с X фасада (центр)
+                        handleMesh_tv9.position.x = facadeMesh.position.x;
+
+                        // Z ручки: задняя плоскость ручки (бывшая X_shape=0) должна быть на передней плоскости фасада.
+                        // Передняя плоскость фасада: facadeMesh.position.z + facadeThicknessMeters / 2
+                        // Локальная X_shape=0 ручки после rotation.y = PI/2 смотрит в -Z.
+                        // Чтобы задняя часть ручки была на передней части фасада:
+                        handleMesh_tv9.position.z = facadeMesh.position.z + facadeThicknessMeters / 2;
+
+                        group.add(handleMesh_tv9);
+                    }
+                }
+                // --- КОНЕЦ: Логика добавления ручки ТВ9 ---
+
+                // Применение текстуры
+                const actualFacadeMaterial = facadeMesh.material;
+                if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
+                    const transformedTexture = applyTextureTransform(
+                        actualFacadeMaterial.map, // Передаем текстуру из СКЛОНИРОВАННОГО материала
+                        textureDirection,
+                        facadeData.width,
+                        facadeData.height
+                    );
+                    if (transformedTexture) {
+                        actualFacadeMaterial.map = transformedTexture; // Применяем НОВУЮ текстуру
+                        actualFacadeMaterial.needsUpdate = true;
+                    }
+                }
+                group.add(facadeMesh);
+            }
+        });
+    } else {
+        console.log(`    [Блок 11] Фасады под духовкой не создаются согласно конфигурации.`);
+    }
+    // --- КОНЕЦ БЛОКА 11: ФАСАДЫ ПОД ДУХОВКОЙ ---
+    // --- НАЧАЛО БЛОКА 12: ВЕРХНИЙ ФАСАД (НАД СВЧ/ДУХОВКОЙ) ---
+
+    if (!topSectionBottomShelfMesh || !topSectionBottomShelfMesh.geometry || !topSectionBottomShelfMesh.geometry.parameters) {
+        console.warn("    [TallOvenMicro][Блок 12] Дно верхней секции (topSectionBottomShelfMesh) не найдено. Верхний фасад не будет создан.");
+    } else {
+        // 1. Параметры для верхнего фасада
+        const topFacadeWidth = cabWidthM - facadeGapMeters; // Ширина фасада (один общий зазор по бокам шкафа, т.к. фасад один)
+                                                            // Если бы было 2 фасада, то cabWidthM - 2 * facadeGapMeters
+        //const gapAboveTopFacadeM = (cabinetData.gapAboveTopFacadeMm || 3) / 1000; // Зазор над этим фасадом (из настроек)
+        // --- ИСПРАВЛЕНИЕ ДЛЯ gapAboveFacadeM ---
+        let gapAboveUserValueMm = cabinetData.gapAboveTopFacadeMm;
+        if (typeof gapAboveUserValueMm !== 'number' || isNaN(gapAboveUserValueMm)) {
+            gapAboveUserValueMm = 3; // Если не число или undefined, ставим дефолт 3 мм
+        }
+        const gapAboveTopFacadeM = gapAboveUserValueMm / 1000; // Теперь 0 останется 0, а undefined станет 0.003
+        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        const fixedOverlapLowerM = 0.007; // 7 мм - фиксированный параметр "наезда" или смещения
+        const tb9HandleHeightM = 0.030;   // 30 мм - высота ручки ТВ9
+
+        // 2. Расчет ВЫСОТЫ верхнего фасада (topFacadeHeight)
+        // Y-координата ВЕРХНЕЙ плоскости шкафа (под крышей, если она есть)
+        const y_top_structure_line = cabHeightM / 2; // Предполагаем, что крыша толщиной panelThicknessM будет НАД этой линией
+
+        // Y-координата ВЕРХНЕЙ плоскости дна верхней секции (topSectionBottomShelfMesh)
+        const tsbs_Thickness_B12 = topSectionBottomShelfMesh.geometry.parameters.height; // Толщина этой полки
+        const y_top_of_tsbs = topSectionBottomShelfMesh.position.y + tsbs_Thickness_B12 / 2;
+
+        let topFacadeHeight;
+        if (handleType === 'aluminum-tv9') {
+            topFacadeHeight = (y_top_structure_line - gapAboveTopFacadeM - y_top_of_tsbs - tb9HandleHeightM) + fixedOverlapLowerM;
+        } else { // standard или gola-profile
+            topFacadeHeight = (y_top_structure_line - gapAboveTopFacadeM - y_top_of_tsbs) + fixedOverlapLowerM;
+        }
+
+        if (handleType === 'aluminum-tv9') console.log(`      tb9HandleHeightM=${tb9HandleHeightM.toFixed(3)}`);
+
+        if (topFacadeWidth > 0.01 && topFacadeHeight > 0.05) { // Минимальные размеры
+            // 3. Создание меша фасада
+            const topFacadeMesh = createPanel(
+                topFacadeWidth,
+                topFacadeHeight,
+                facadeThicknessMeters,
+                facadeMaterialToClone.clone(),
+                'frontal',
+                `top_facade_tall_oven_micro_${cabinetUUID.substring(0,4)}`
+            );
+
+            if (topFacadeMesh) {
+                // 4. Расчет Y-позиции ЦЕНТРА верхнего фасада
+                let y_bottom_plane_of_top_facade;
+                if (handleType === 'aluminum-tv9') {
+                    // нижняя грань фасада на 23 мм ВЫШЕ верхней грани topSectionBottomShelfMesh
+                    // 23 мм = 30 мм (высота ручки) - 7 мм (наезд)
+                    y_bottom_plane_of_top_facade = y_top_of_tsbs + (tb9HandleHeightM - fixedOverlapLowerM);
+                } else { // standard или gola-profile
+                    // нижняя грань фасада на 7 мм НИЖЕ верхней грани topSectionBottomShelfMesh
+                    y_bottom_plane_of_top_facade = y_top_of_tsbs - fixedOverlapLowerM;
+                }
+                const topFacadeCenterY = y_bottom_plane_of_top_facade + topFacadeHeight / 2;
+
+                // Позиционирование фасада
+                topFacadeMesh.position.x = 0; // Центр по X
+                topFacadeMesh.position.y = topFacadeCenterY;
+                topFacadeMesh.position.z = cabDepthM / 2 + facadeThicknessMeters / 2;
+
+                topFacadeMesh.userData.cabinetUUID = cabinetUUID;
+                topFacadeMesh.userData.isFacade = true;
+
+                // Применение текстуры (как раньше)
+                const actualTopFacadeMaterial = topFacadeMesh.material;
+                if (actualTopFacadeMaterial.map && actualTopFacadeMaterial.map.isTexture) {
+                    const transformedTexture = applyTextureTransform(
+                        actualTopFacadeMaterial.map, textureDirection,
+                        topFacadeWidth, topFacadeHeight
+                    );
+                    if (transformedTexture) {
+                        actualTopFacadeMaterial.map = transformedTexture;
+                        actualTopFacadeMaterial.needsUpdate = true;
+                    }
+                }
+                group.add(topFacadeMesh);
+
+                // 5. Создание ручки ТВ9 (если нужно)
+                if (handleType === 'aluminum-tv9') {
+                    topFacadeMesh.userData.needsTB9Handle = true;
+                    const handleLength_top_tv9 = topFacadeWidth;
+                    const tb9ProfileWidthOnFacadeMm = 19; // Ширина профиля ручки, которая "лежит" на фасаде (выступает вперед)
+                    const tb9ProfileHeightMm = 30;    // Высота сечения профиля ручки
+
+                    const handleShape_top_tv9 = new THREE.Shape();
+                    handleShape_top_tv9.moveTo(0, 0);
+                    handleShape_top_tv9.lineTo(tb9ProfileWidthOnFacadeMm, 0);
+                    handleShape_top_tv9.lineTo(tb9ProfileWidthOnFacadeMm, tb9ProfileHeightMm);
+                    handleShape_top_tv9.lineTo(tb9ProfileWidthOnFacadeMm - 1.5, tb9ProfileHeightMm);
+                    handleShape_top_tv9.lineTo(tb9ProfileWidthOnFacadeMm - 1.5, 1);
+                    handleShape_top_tv9.lineTo(0, 1);
+                    handleShape_top_tv9.closePath();
+
+                    const handleExtrudeSettings_top_tv9 = { depth: handleLength_top_tv9 * 1000, steps: 1, bevelEnabled: false };
+                    let handleGeometry_top_tv9 = null;
+                    try {
+                        handleGeometry_top_tv9 = new THREE.ExtrudeGeometry(handleShape_top_tv9, handleExtrudeSettings_top_tv9);
+                        handleGeometry_top_tv9.translate(0, 0, -handleLength_top_tv9 * 1000 / 2);
+                        handleGeometry_top_tv9.scale(1 / 1000, 1 / 1000, 1 / 1000);
+                    } catch (e) { console.error(`      [Блок 12] Ошибка геометрии ручки ТВ9 для верхнего фасада:`, e); }
+
+                    if (handleGeometry_top_tv9) {
+                        const handleMesh_top_tv9 = new THREE.Mesh(handleGeometry_top_tv9, golaMaterial.clone());
+                        handleMesh_top_tv9.name = `handle_TV9_top_facade_${cabinetUUID.substring(0,4)}`;
+                        handleMesh_top_tv9.userData = { /* ... userData для ручки ... */ };
+                        
+                        // Поворот ручки:
+                        handleMesh_top_tv9.rotation.y = -Math.PI / 2; // Длина ручки (бывшая Z экструзии) вдоль X шкафа
+                        handleMesh_top_tv9.rotation.x = Math.PI;     
+
+                        const y_bottom_plane_of_facade = topFacadeMesh.position.y - topFacadeHeight / 2;
+                        handleMesh_top_tv9.position.y = y_bottom_plane_of_facade;
+
+                        handleMesh_top_tv9.position.x = topFacadeMesh.position.x; // Центр по X
+
+                        handleMesh_top_tv9.position.z = topFacadeMesh.position.z - facadeThicknessMeters / 2 + 0.019;
+
+                        group.add(handleMesh_top_tv9);
+                    }
+                }
+            }
+        } else {
+            console.warn(`    [Блок 12] Верхний фасад не создан (ширина или высота некорректны).`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 12: ВЕРХНИЙ ФАСАД ---
+    // --- НАЧАЛО БЛОКА 13: УСТАНОВКА МОДЕЛИ ДУХОВКИ ---
+    console.log(`  [TallOvenMicro] Блок 13: Установка МОДЕЛИ ДУХОВКИ...`);
+
+    const ovenTypeSetting = cabinetData.ovenType || '600'; // Дефолт, если не задано
+    const ovenColorSetting = cabinetData.ovenColor || 'metallic';
+
+    if (ovenTypeSetting === 'none') {
+        console.log("      [Блок 13] Духовка не выбрана (ovenType === 'none'). Модель не будет добавлена.");
+    } else if (!ovenSupportShelfMesh || !ovenSupportShelfMesh.geometry || !ovenSupportShelfMesh.geometry.parameters) {
+        console.warn("      [Блок 13] Полка для духовки (ovenSupportShelfMesh) не найдена или некорректна. Модель духовки не будет добавлена.");
+    } else {
+        const ovenModelFileName = `oven_${ovenTypeSetting}.glb`;
+        const ovenModel = getPreloadedModelClone(ovenModelFileName);
+
+        if (ovenModel) {
+            console.log(`      [Блок 13] Модель духовки ${ovenModelFileName} получена из кэша.`);
+            ovenModel.name = `oven_model_${ovenTypeSetting}_tall_${cabinetUUID.substring(0,4)}`;
+            ovenModel.userData = {
+                isCabinetPart: true,
+                objectType: 'appliance_oven',
+                cabinetUUID: cabinetUUID
+            };
+
+            // --- Создание и применение материала духовки ---
+            let ovenMaterialInstance; // Переименовал, чтобы не конфликтовать с cabinetMaterial
+            switch (ovenColorSetting) {
+                case 'black':
+                    ovenMaterialInstance = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.6, name: "OvenBlackMat_Tall" });
+                    break;
+                case 'white':
+                    ovenMaterialInstance = new THREE.MeshStandardMaterial({ color: 0xE5E5E5, metalness: 0.1, roughness: 0.15, name: "OvenWhiteMat_Tall" });
+                    break;
+                case 'metallic':
+                default:
+                    ovenMaterialInstance = new THREE.MeshStandardMaterial({ color: 0x7B7B7B, metalness: 0.9, roughness: 0.3, name: "OvenMetallicMat_Tall" });
+                    break;
+            }
+            ovenModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.material) {
+                        if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
+                        else child.material.dispose();
+                    }
+                    child.material = ovenMaterialInstance; // Присваиваем один инстанс материала всем частям
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            console.log(`        Материал духовки установлен: ${ovenColorSetting}`);
+
+            // --- Позиционирование модели духовки ---
+            // Y-координата НИЗА духовки = верхняя плоскость ovenSupportShelfMesh
+            const supportShelfThickness = ovenSupportShelfMesh.geometry.parameters.height;
+            const ovenBottomSurfaceY_Global = ovenSupportShelfMesh.position.y + supportShelfThickness / 2;
+            
+            // Предполагаем, что локальный Y=0 модели духовки - это ее низ.
+            const targetOvenOriginY = ovenBottomSurfaceY_Global;
+            const targetOvenOriginX = 0; // По центру шкафа
+            // Z-координата: передняя плоскость модели духовки (ее локальный Z=0)
+            // выровнена по передней плоскости корпуса шкафа.
+            const targetOvenOriginZ = cabDepthM / 2; 
+
+            ovenModel.position.set(targetOvenOriginX, targetOvenOriginY, targetOvenOriginZ);
+            ovenModel.scale.set(1, 1, 1); // Предполагаем, что модель уже в метрах
+            // ovenModel.rotation.set(0, 0, 0); // Если нужно сбросить вращение модели
+
+            group.add(ovenModel);
+            console.log(`        Модель духовки ${ovenModelFileName} добавлена. Pos: Y_низ=${targetOvenOriginY.toFixed(3)}, Z_перед=${targetOvenOriginZ.toFixed(3)}`);
+
+        } else {
+            console.error(`      [Блок 13] Модель духовки ${ovenModelFileName} НЕ НАЙДЕНА в кэше! Будет создана заглушка.`);
+            // Создаем красную заглушку (как в createDetailedOvenCabinetGeometry)
+            const ovenActualHeightForPlaceholder = parseFloat(ovenTypeSetting) / 1000 || 0.595;
+            const placeholderWidth = cabWidthM * 0.8;
+            const placeholderHeight = ovenActualHeightForPlaceholder * 0.95;
+            const placeholderDepth = cabDepthM * 0.7;
+            
+            const placeholderGeo = new THREE.BoxGeometry(placeholderWidth, placeholderHeight, placeholderDepth);
+            const placeholderMat = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: false, name: "OvenErrorPlaceholderMat_Tall"});
+            const errorPlaceholder = new THREE.Mesh(placeholderGeo, placeholderMat);
+            errorPlaceholder.name = `OVEN_ERROR_PLACEHOLDER_TALL_${ovenTypeSetting}`;
+
+            const supportShelfThickness = ovenSupportShelfMesh.geometry.parameters.height;
+            const ovenBottomSurfaceY_Global = ovenSupportShelfMesh.position.y + supportShelfThickness / 2;
+            
+            const placeholderCenterX = 0;
+            const placeholderCenterY = ovenBottomSurfaceY_Global + placeholderHeight / 2; // Центр заглушки по высоте
+            const placeholderCenterZ = cabDepthM / 2 - placeholderDepth / 2; // Центр заглушки по глубине
+            
+            errorPlaceholder.position.set(placeholderCenterX, placeholderCenterY, placeholderCenterZ);
+            group.add(errorPlaceholder);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 13: УСТАНОВКА МОДЕЛИ ДУХОВКИ ---
+    // --- НАЧАЛО БЛОКА 14: УСТАНОВКА МОДЕЛИ МИКРОВОЛНОВКИ ---
+    console.log(`  [TallOvenMicro] Блок 14: Установка МОДЕЛИ МИКРОВОЛНОВКИ...`);
+
+    const microwaveTypeSetting = cabinetData.microwaveType || 'none'; // '362', '380', 'none'
+    // Цвет микроволновки берем тот же, что и для духовки (из cabinetData.ovenColor)
+    const applianceColorSetting = cabinetData.ovenColor || 'metallic'; // Используем общее или ovenColor
+
+    // microShelfMesh должен был быть создан в Блоке 6
+    if (microwaveTypeSetting === 'none') {
+        console.log("      [Блок 14] Микроволновка не выбрана (microwaveType === 'none'). Модель не будет добавлена.");
+    } else if (!microShelfMesh || !microShelfMesh.geometry || !microShelfMesh.geometry.parameters) {
+        console.warn("      [Блок 14] Полка для СВЧ (microShelfMesh) не найдена или некорректна. Модель СВЧ не будет добавлена.");
+    } else {
+        let microwaveModelFileName = '';
+        if (microwaveTypeSetting === '362') {
+            microwaveModelFileName = 'mkw_362.glb';
+        } else if (microwaveTypeSetting === '380') {
+            // Если у вас есть модель для 380мм, укажите ее имя здесь.
+            // Пока будем использовать ту же модель, что и для 362, или заглушку.
+            console.warn(`      [Блок 14] Модель для микроволновки типа '380' не указана, будет использована 'mkw_362.glb' или заглушка.`);
+            microwaveModelFileName = 'mkw_362.glb'; // ЗАГЛУШКА - используем 362, пока нет другой
+        } else {
+            console.warn(`      [Блок 14] Неизвестный тип микроволновки: ${microwaveTypeSetting}. Модель не будет добавлена.`);
+        }
+
+        if (microwaveModelFileName) {
+            const microwaveModel = getPreloadedModelClone(microwaveModelFileName);
+
+            if (microwaveModel) {
+                console.log(`      [Блок 14] Модель СВЧ ${microwaveModelFileName} получена из кэша.`);
+                microwaveModel.name = `microwave_model_${microwaveTypeSetting}_tall_${cabinetUUID.substring(0,4)}`;
+                microwaveModel.userData = {
+                    isCabinetPart: true,
+                    objectType: 'appliance_microwave',
+                    cabinetUUID: cabinetUUID
+                };
+
+                // --- Создание и применение материала СВЧ (используем ту же логику, что и для духовки) ---
+                let microwaveMaterialInstance;
+                switch (applianceColorSetting) { // Используем applianceColorSetting
+                    case 'black':
+                        microwaveMaterialInstance = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.6, name: "MicrowaveBlackMat_Tall" });
+                        break;
+                    case 'white':
+                        microwaveMaterialInstance = new THREE.MeshStandardMaterial({ color: 0xE5E5E5, metalness: 0.1, roughness: 0.15, name: "MicrowaveWhiteMat_Tall" });
+                        break;
+                    case 'metallic':
+                    default:
+                        microwaveMaterialInstance = new THREE.MeshStandardMaterial({ color: 0x7B7B7B, metalness: 0.9, roughness: 0.3, name: "MicrowaveMetallicMat_Tall" });
+                        break;
+                }
+                microwaveModel.traverse((child) => {
+                    if (child.isMesh) {
+                        if (child.material) {
+                            if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
+                            else child.material.dispose();
+                        }
+                        child.material = microwaveMaterialInstance;
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                console.log(`        Материал СВЧ установлен: ${applianceColorSetting}`);
+
+                // --- Позиционирование модели СВЧ ---
+                // Y-координата НИЗА СВЧ = верхняя плоскость microShelfMesh
+                const microShelfThickness = microShelfMesh.geometry.parameters.height;
+                const microwaveBottomSurfaceY_Global = microShelfMesh.position.y + microShelfThickness / 2;
+                
+                const targetMicrowaveOriginY = microwaveBottomSurfaceY_Global;
+                const targetMicrowaveOriginX = 0; // По центру шкафа
+                // Z-координата: передняя плоскость модели СВЧ (ее локальный Z=0)
+                // выровнена по передней плоскости корпуса шкафа.
+                const targetMicrowaveOriginZ = cabDepthM / 2; 
+
+                microwaveModel.position.set(targetMicrowaveOriginX, targetMicrowaveOriginY, targetMicrowaveOriginZ);
+                microwaveModel.scale.set(1, 1, 1); // Предполагаем, что модель уже в метрах
+
+                group.add(microwaveModel);
+                console.log(`        Модель СВЧ ${microwaveModelFileName} добавлена. Pos: Y_низ=${targetMicrowaveOriginY.toFixed(3)}, Z_перед=${targetMicrowaveOriginZ.toFixed(3)}`);
+
+            } else {
+                console.error(`      [Блок 14] Модель СВЧ ${microwaveModelFileName} НЕ НАЙДЕНА в кэше! Будет создана заглушка.`);
+                // Создаем красную заглушку
+                let microwaveActualHeightForPlaceholder = 0.362; // Дефолтная высота для заглушки
+                if (microwaveTypeSetting === '380') microwaveActualHeightForPlaceholder = 0.380;
+                
+                const placeholderWidth = cabWidthM * 0.75; // Чуть уже, чем для духовки
+                const placeholderHeight = microwaveActualHeightForPlaceholder * 0.95;
+                const placeholderDepth = cabDepthM * 0.6; // Менее глубокая
+                
+                const placeholderGeo = new THREE.BoxGeometry(placeholderWidth, placeholderHeight, placeholderDepth);
+                const placeholderMat = new THREE.MeshBasicMaterial({color: 0xff0000, wireframe: false, name: "MicrowaveErrorPlaceholderMat_Tall"});
+                const errorPlaceholder = new THREE.Mesh(placeholderGeo, placeholderMat);
+                errorPlaceholder.name = `MICROWAVE_ERROR_PLACEHOLDER_TALL_${microwaveTypeSetting}`;
+
+                const microShelfThickness = microShelfMesh.geometry.parameters.height;
+                const microwaveBottomSurfaceY_Global = microShelfMesh.position.y + microShelfThickness / 2;
+                
+                const placeholderCenterX = 0;
+                const placeholderCenterY = microwaveBottomSurfaceY_Global + placeholderHeight / 2;
+                const placeholderCenterZ = cabDepthM / 2 - placeholderDepth / 2;
+                
+                errorPlaceholder.position.set(placeholderCenterX, placeholderCenterY, placeholderCenterZ);
+                group.add(errorPlaceholder);
+            }
+        } // конец if (microwaveModelFileName)
+    }
+    // --- КОНЕЦ БЛОКА 14: УСТАНОВКА МОДЕЛИ МИКРОВОЛНОВКИ ---
+
+    return group;
+}
+
+/**
+ * Создает THREE.Group, представляющую детализированную модель шкафа
+ * для встроенного холодильника.
+ * @param {object} cabinetData - Объект шкафа из массива 'cabinets'.
+ * @returns {THREE.Group | null} Группа со всеми частями шкафа или null при ошибке.
+ */
+function createDetailedFridgeCabinetGeometry(cabinetData) {
+
+    if (!cabinetData || cabinetData.cabinetConfig !== 'fridge') {
+        console.error("[createDetailedFridgeCabinet] Неверные данные шкафа или конфигурация не 'fridge'.");
+        return null;
+    }
+
+    const group = new THREE.Group();
+    group.userData.isDetailedCabinet = true;
+    group.userData.objectType = 'cabinet';
+    group.userData.cabinetType = cabinetData.cabinetType;   // 'straight'
+    group.userData.cabinetConfig = cabinetData.cabinetConfig; // 'fridge'
+    const cabinetUUID = cabinetData.mesh?.uuid || THREE.MathUtils.generateUUID();
+
+    // --- Основные размеры и параметры ---
+    const panelThicknessM = getPanelThickness();
+    const cabWidthM = cabinetData.width;
+    const cabHeightM = cabinetData.height; // Общая высота пенала
+    const cabDepthM = cabinetData.depth;
+
+    const handleType = kitchenGlobalParams.handleType || 'standard';
+
+    // --- Материалы ---
+    const cabinetMaterial = new THREE.MeshStandardMaterial({
+        color: cabinetData.initialColor,
+        roughness: 0.8,
+        metalness: 0.1,
+        name: `FridgeCabBodyMat_${cabinetUUID.substring(0,4)}`
+    });
+
+    // Блоки будут добавляться сюда
+    // --- НАЧАЛО БЛОКА 1: ДНО ШКАФА (с вырезом, КОПИЯ из tallOvenMicro) ---
+    const bottomPanelShapeWidth = cabWidthM;   // Имя переменной оставляем для совместимости с кодом Shape
+    const bottomPanelShapeDepth = cabDepthM;
+    const bottomPanelExtrudeDepth = panelThicknessM;
+
+    if (bottomPanelShapeWidth <= 0 || bottomPanelShapeDepth <= 0 || bottomPanelExtrudeDepth <= 0) {
+        console.error("    [FridgeCab][Блок 1] Некорректные размеры для создания дна экструзией.");
+    } else {
+        // Ваш отлаженный код для bottomShape с вырезом и скруглениями
+        const bottomShape = new THREE.Shape();
+        const radius = 0.008; // 8 мм (или 0.005, как было в предыдущей итерации - используйте ваше финальное значение)
+                               // В вашем последнем коде для tallOvenMicro было 0.008
+
+        // Координаты углов, которые мы будем скруглять (отступы по 80мм, вырез 40мм)
+        const corner1X = bottomPanelShapeWidth - 0.08;
+        const corner1Y = bottomPanelShapeDepth - 0.04; // Y в Shape - это глубина шкафа
+
+        const corner2X = 0.08;
+        const corner2Y = bottomPanelShapeDepth - 0.04;
+
+        bottomShape.moveTo(0, 0);                                           // Зад-лево
+        bottomShape.lineTo(bottomPanelShapeWidth, 0);                       // Зад-право
+        bottomShape.lineTo(bottomPanelShapeWidth, bottomPanelShapeDepth);    // Перед-право
+        bottomShape.lineTo(corner1X, bottomPanelShapeDepth);                // Вдоль передней кромки до начала правого "ушка" выреза
+
+        bottomShape.lineTo(corner1X, corner1Y + radius);                    // Вертикально вниз до начала первого скругления
+        // Первое скругление (правый "верхний" угол выреза, если смотреть на Shape)
+        bottomShape.quadraticCurveTo(
+            corner1X,       // cpX (вершина угла)
+            corner1Y,       // cpY (вершина угла)
+            corner1X - radius, // endX
+            corner1Y        // endY
+        );
+        // Горизонтальная часть выреза
+        bottomShape.lineTo(corner2X + radius, corner2Y);                   // До начала второго скругления
+
+        // Второе скругление (левый "верхний" угол выреза)
+        bottomShape.quadraticCurveTo(
+            corner2X,       // cpX (вершина угла)
+            corner2Y,       // cpY (вершина угла)
+            corner2X,       // endX
+            corner2Y + radius  // endY
+        );
+
+        // Вертикальная часть левого "ушка" выреза
+        bottomShape.lineTo(0.08, bottomPanelShapeDepth); // До передней кромки шкафа
+        bottomShape.lineTo(0, bottomPanelShapeDepth);    // Вдоль передней кромки до левого края
+        bottomShape.closePath();                         // Замыкаем контур (на 0,0)
+
+        const extrudeSettings = {
+            steps: 1,
+            depth: bottomPanelExtrudeDepth, // Глубина выдавливания = толщина дна
+            bevelEnabled: false
+        };
+
+        let bottomGeometry = null;
+        try {
+            bottomGeometry = new THREE.ExtrudeGeometry(bottomShape, extrudeSettings);
+        } catch (error) {
+            console.error("    [FridgeCab][Блок 1] Ошибка создания ExtrudeGeometry для дна:", error);
+        }
+
+        if (bottomGeometry) {
+            const bottomPanelMesh = new THREE.Mesh(bottomGeometry, cabinetMaterial.clone());
+            bottomPanelMesh.name = `bottom_extruded_fridge_${cabinetUUID.substring(0,4)}`; // Изменил имя для Fridge
+            bottomPanelMesh.userData = {
+                isCabinetPart: true,
+                objectType: 'cabinetPart',
+                panelType: 'bottom_with_vent', // Тип такой же, раз форма та же
+                orientationType: 'horizontal_extruded',
+                cabinetUUID: cabinetUUID
+            };
+
+            bottomPanelMesh.rotation.x = -Math.PI / 2;
+
+            // Ваше отлаженное позиционирование
+            const posX_bottom = -bottomPanelShapeWidth / 2;
+            const posY_bottom = -cabHeightM / 2; // Ваш вариант: ... + bottomPanelExtrudeDepth * 0;
+            const posZ_bottom = bottomPanelShapeDepth / 2;
+
+            bottomPanelMesh.position.set(posX_bottom, posY_bottom, posZ_bottom);
+            group.add(bottomPanelMesh);
+        } else {
+            console.error("    [FridgeCab][Блок 1] Не удалось создать геометрию дна экструзией.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 1: ДНО ШКАФА ---
+    // --- НАЧАЛО БЛОКА 2: ЛЕВАЯ БОКОВИНА (через createPanel) ---
+
+    // --- 2.1 РАСЧЕТ РАЗМЕРОВ для левой боковины ---
+    const leftSideHeight_fridge = cabHeightM - panelThicknessM;
+    const leftSideThickness_fridge = panelThicknessM; // Это будет 'width' для createPanel с orientation 'vertical'
+    let leftSideDepth_fridge = cabDepthM;         // Это будет 'depth' для createPanel
+
+    if (cabinetData.verticalGolaProfile === 'left' || cabinetData.verticalGolaProfile === 'both') {
+        leftSideDepth_fridge = cabDepthM - 0.012;
+    }
+    // console.log(`    [FridgeCab][Блок 2] Левая боковина: Размеры для createPanel: W(толщина X)=${leftSideThickness_fridge.toFixed(3)}, H(высота Y)=${leftSideHeight_fridge.toFixed(3)}, D(глубина Z)=${leftSideDepth_fridge.toFixed(3)}`);
+
+    if (leftSideHeight_fridge <= 0 || leftSideDepth_fridge <= 0 || leftSideThickness_fridge <= 0) {
+        console.error("    [FridgeCab][Блок 2] Некорректные размеры для создания левой боковины.");
+    } else {
+        // --- 2.2 СОЗДАНИЕ МЕША левой боковины ---
+        const leftSideMesh_fridge = createPanel(
+            leftSideThickness_fridge, // width для createPanel (толщина боковины по X шкафа)
+            leftSideHeight_fridge,    // height для createPanel (высота боковины по Y шкафа)
+            leftSideDepth_fridge,     // depth для createPanel (глубина боковины по Z шкафа)
+            cabinetMaterial,          // Общий материал корпуса
+            'vertical',               // Ориентация: толщина панели задается первым параметром (width)
+            `leftSide_panel_fridge_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (leftSideMesh_fridge) {
+            // --- 2.3 ПОЗИЦИОНИРОВАНИЕ левой боковины ---
+            // createPanel размещает локальный (0,0,0) в центре созданного BoxGeometry.
+
+            // X: Внешняя левая плоскость боковины на -cabWidthM / 2.
+            const meshPosX = -cabWidthM / 2 + leftSideThickness_fridge / 2;
+
+            // Y: Нижняя плоскость боковины стоит на дне (на высоте -cabHeightM / 2 + panelThicknessM).
+            const meshPosY = (-cabHeightM / 2 + panelThicknessM) + leftSideHeight_fridge / 2;
+
+            // Z: Задняя плоскость боковины на -cabDepthM / 2.
+            const meshPosZ = -cabDepthM / 2 + leftSideDepth_fridge / 2;
+
+            leftSideMesh_fridge.position.set(meshPosX, meshPosY, meshPosZ);
+            
+            leftSideMesh_fridge.userData.panelType = 'leftSide_fridge'; // Уточняем тип панели
+
+            group.add(leftSideMesh_fridge);
+        } else {
+            console.error("    [FridgeCab][Блок 2] Не удалось создать меш левой боковины с помощью createPanel.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 2: ЛЕВАЯ БОКОВИНА ---
+    // --- НАЧАЛО БЛОКА 3: ПРАВАЯ БОКОВИНА (через createPanel) ---
+
+    // --- 3.1 РАСЧЕТ РАЗМЕРОВ для правой боковины ---
+    const rightSideHeight_fridge = cabHeightM - panelThicknessM; // Такая же высота, как у левой
+    const rightSideThickness_fridge = panelThicknessM;         // Такая же толщина
+    let rightSideDepth_fridge = cabDepthM;                     // Начальная глубина
+
+    // Условие для уменьшения глубины правой боковины
+    if (cabinetData.verticalGolaProfile === 'right' || cabinetData.verticalGolaProfile === 'both') {
+        rightSideDepth_fridge = cabDepthM - 0.012;
+    }
+    // console.log(`    [FridgeCab][Блок 3] Правая боковина: Размеры для createPanel: W(толщина X)=${rightSideThickness_fridge.toFixed(3)}, H(высота Y)=${rightSideHeight_fridge.toFixed(3)}, D(глубина Z)=${rightSideDepth_fridge.toFixed(3)}`);
+
+    if (rightSideHeight_fridge <= 0 || rightSideDepth_fridge <= 0 || rightSideThickness_fridge <= 0) {
+        console.error("    [FridgeCab][Блок 3] Некорректные размеры для создания правой боковины.");
+    } else {
+        // --- 3.2 СОЗДАНИЕ МЕША правой боковины ---
+        const rightSideMesh_fridge = createPanel(
+            rightSideThickness_fridge, // width для createPanel (толщина боковины по X шкафа)
+            rightSideHeight_fridge,    // height для createPanel (высота боковины по Y шкафа)
+            rightSideDepth_fridge,     // depth для createPanel (глубина боковины по Z шкафа)
+            cabinetMaterial,           // Общий материал корпуса
+            'vertical',                // Ориентация: толщина панели задается первым параметром (width)
+            `rightSide_panel_fridge_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (rightSideMesh_fridge) {
+            // --- 3.3 ПОЗИЦИОНИРОВАНИЕ правой боковины ---
+            // X: Внешняя правая плоскость боковины на +cabWidthM / 2.
+            const meshPosX_R = cabWidthM / 2 - rightSideThickness_fridge / 2;
+
+            // Y: Такой же, как у левой боковины (стоит на дне, центр по высоте)
+            const meshPosY_R = (-cabHeightM / 2 + panelThicknessM) + rightSideHeight_fridge / 2;
+
+            // Z: Такой же, как у левой боковины (задняя плоскость на -cabDepthM / 2, центр по ее актуальной глубине)
+            const meshPosZ_R = -cabDepthM / 2 + rightSideDepth_fridge / 2;
+
+            rightSideMesh_fridge.position.set(meshPosX_R, meshPosY_R, meshPosZ_R);
+            
+            rightSideMesh_fridge.userData.panelType = 'rightSide_fridge'; // Уточняем тип панели
+
+            group.add(rightSideMesh_fridge);
+        } else {
+            console.error("    [FridgeCab][Блок 3] Не удалось создать меш правой боковины с помощью createPanel.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 3: ПРАВАЯ БОКОВИНА ---
+    // --- ПЕРЕМЕННАЯ ДЛЯ ССЫЛКИ НА ЭТУ ПОЛКУ (дно верхней секции) ---
+    let shelfAboveFridgeMesh = null;
+
+    // --- НАЧАЛО БЛОКА 4: ПОЛКА НАД ХОЛОДИЛЬНИКОМ (ДНО ВЕРХНЕЙ СЕКЦИИ) ---
+    // Эта полка по конструкции аналогична topSectionBottomShelfMesh из tallOvenMicro
+
+    // --- 4.1 Расчет размеров полки ---
+    // Ширина: между боковинами (без доп. зазоров, т.к. это конструктивный элемент - дно секции)
+    const shelfWidth_fridgeTop = cabWidthM - 2 * panelThicknessM;
+    const shelfThickness_fridgeTop = panelThicknessM; // "Высота" для createPanel
+
+    // Глубина: как у дна верхней секции в tallOvenMicro (общая глубина - 60мм - толщина задней стенки ВЕРХНЕЙ секции)
+    const shelfDepth_fridgeTop = cabDepthM - 0.060 - panelThicknessM;
+
+
+    if (shelfWidth_fridgeTop <= 0 || shelfThickness_fridgeTop <= 0 || shelfDepth_fridgeTop <= 0) {
+        console.error("      [FridgeCab][Блок 4] Некорректные размеры для создания полки над холодильником.");
+    } else {
+        // --- 4.2 Расчет Y-координаты ЦЕНТРА полки ---
+        // Y-координата ВЕРХНЕЙ плоскости дна шкафа (созданного в Блоке 1)
+        const y_top_of_bottom_panel = -cabHeightM / 2 + panelThicknessM; // Низ шкафа + толщина дна
+
+        const fridgeNicheHeightM = (cabinetData.fridgeNicheHeightMm || 1780) / 1000;
+        // console.log(`      [FridgeCab][Блок 4] Y верха дна шкафа=${y_top_of_bottom_panel.toFixed(3)}, Высота ниши=${fridgeNicheHeightM.toFixed(3)}`);
+
+        // Y-координата НИЖНЕЙ плоскости полки над холодильником
+        const y_bottom_plane_shelf_above_fridge = y_top_of_bottom_panel + fridgeNicheHeightM;
+        // Y-координата ЦЕНТРА полки над холодильником
+        const shelfCenterY_fridgeTop = y_bottom_plane_shelf_above_fridge + shelfThickness_fridgeTop / 2;
+        // console.log(`      [FridgeCab][Блок 4] Y низа полки над холод.=${y_bottom_plane_shelf_above_fridge.toFixed(3)}, Y центра=${shelfCenterY_fridgeTop.toFixed(3)}`);
+
+        // --- 4.3 Расчет Z-координаты ЦЕНТРА полки ---
+        // Передний торец этой полки выравнивается по переднему торцу корпуса шкафа.
+        const cabinetFrontEdgeGlobalZ_B4 = cabDepthM / 2; // Передняя плоскость корпуса
+        // Центр полки по глубине: от переднего края шкафа смещаемся назад на половину глубины полки
+        const shelfCenterZ_fridgeTop = cabinetFrontEdgeGlobalZ_B4 - shelfDepth_fridgeTop / 2;
+
+        // --- 4.4 Создание меша полки ---
+        shelfAboveFridgeMesh = createPanel(
+            shelfWidth_fridgeTop,
+            shelfThickness_fridgeTop,
+            shelfDepth_fridgeTop,
+            cabinetMaterial,
+            'horizontal',
+            `shelf_above_fridge_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (shelfAboveFridgeMesh) {
+            shelfAboveFridgeMesh.position.set(0, shelfCenterY_fridgeTop, shelfCenterZ_fridgeTop);
+            shelfAboveFridgeMesh.userData.cabinetUUID = cabinetUUID;
+            shelfAboveFridgeMesh.userData.panelType = 'shelf_above_fridge'; // Дно верхней секции
+            group.add(shelfAboveFridgeMesh);
+        } else {
+            console.error("      [FridgeCab][Блок 4] Не удалось создать меш полки над холодильником.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 4: ПОЛКА НАД ХОЛОДИЛЬНИКОМ ---
+    // --- НАЧАЛО БЛОКА 5: КРЫША ШКАФА ---
+    let roofMesh_fridge = null; // Переменная для ссылки на меш крыши
+
+    // --- 5.1 Расчет размеров крыши (аналогично полке из Блока 4) ---
+    const roofWidth_fridge = cabWidthM - 2 * panelThicknessM;
+    const roofThickness_fridge = panelThicknessM; // "Высота" для createPanel
+    const roofDepth_fridge = cabDepthM - 0.060 - panelThicknessM; // Такая же глубина, как у полки над холодильником
+
+    if (roofWidth_fridge <= 0 || roofThickness_fridge <= 0 || roofDepth_fridge <= 0) {
+        console.error("      [FridgeCab][Блок 5] Некорректные размеры для создания крыши.");
+    } else {
+        // --- 5.2 Расчет Y-координаты ЦЕНТРА крыши ---
+        // Верхняя плоскость крыши должна совпадать с верхней плоскостью шкафа (Y_глоб = cabHeightM / 2)
+        const y_top_plane_of_cabinet_B5 = cabHeightM / 2;
+        const roofCenterY_fridge = y_top_plane_of_cabinet_B5 - roofThickness_fridge / 2;
+        // console.log(`      [FridgeCab][Блок 5] Y верха шкафа=${y_top_plane_of_cabinet_B5.toFixed(3)}, Y центра крыши=${roofCenterY_fridge.toFixed(3)}`);
+
+        // --- 5.3 Расчет Z-координаты ЦЕНТРА крыши (аналогично полке из Блока 4) ---
+        // Передний торец крыши выравнивается по переднему торцу корпуса шкафа.
+        const cabinetFrontEdgeGlobalZ_B5 = cabDepthM / 2;
+        const roofCenterZ_fridge = cabinetFrontEdgeGlobalZ_B5 - roofDepth_fridge / 2;
+        // console.log(`      [FridgeCab][Блок 5] Z-центр крыши = ${roofCenterZ_fridge.toFixed(3)}м`);
+
+        // --- 5.4 Создание меша крыши ---
+        roofMesh_fridge = createPanel(
+            roofWidth_fridge,
+            roofThickness_fridge, // Толщина для createPanel
+            roofDepth_fridge,
+            cabinetMaterial,
+            'horizontal',
+            `roof_fridge_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (roofMesh_fridge) {
+            roofMesh_fridge.position.set(0, roofCenterY_fridge, roofCenterZ_fridge); // X=0 (центр шкафа)
+            roofMesh_fridge.userData.cabinetUUID = cabinetUUID;
+            roofMesh_fridge.userData.panelType = 'roof_fridge'; // Уточняем тип
+            group.add(roofMesh_fridge);
+        } else {
+            console.error("      [FridgeCab][Блок 5] Не удалось создать меш крыши.");
+        }
+    }
+    // --- КОНЕЦ БЛОКА 5: КРЫША ШКАФА ---
+    // --- НАЧАЛО БЛОКА 6: ЗАДНЯЯ СТЕНКА ВЕРХНЕЙ СЕКЦИИ (УПРОЩЕННЫЙ ВАРИАНТ) ---
+
+    // Нам нужен shelfAboveFridgeMesh (из Блока 4)
+    if (!shelfAboveFridgeMesh || !shelfAboveFridgeMesh.geometry || !shelfAboveFridgeMesh.geometry.parameters) {
+        console.warn("    [FridgeCab][Блок 6] Полка над холодильником (shelfAboveFridgeMesh) не найдена. Задняя стенка верхней секции не будет создана.");
+    } else {
+        // --- 6.1 Расчет размеров задней стенки ---
+        const rearPanelWidth_fridgeTopSec = shelfAboveFridgeMesh.geometry.parameters.width;
+        const rearPanelThickness_fridgeTopSec = panelThicknessM; // Толщина задней стенки (будет "глубиной" для createPanel 'frontal')
+
+        // Высота: от НИЖНЕЙ грани shelfAboveFridgeMesh до ВЕРХА шкафа (под крышей)
+        const y_bottom_plane_shelf_above_fridge = shelfAboveFridgeMesh.position.y - (shelfAboveFridgeMesh.geometry.parameters.height / 2);
+        // Верхняя внутренняя граница шкафа (предполагаем, что крыша толщиной panelThicknessM будет НАД этой линией)
+        const y_top_interior_cabinet = cabHeightM / 2; 
+        // Если крыши не будет или она будет другой толщины, или задняя стенка доходит до самого верха боковин, то:
+        // const y_top_interior_cabinet = cabHeightM / 2; // До самого верха боковин
+
+        const rearPanelHeight_fridgeTopSec = y_top_interior_cabinet - y_bottom_plane_shelf_above_fridge;
+
+        if (rearPanelWidth_fridgeTopSec <= 0 || rearPanelHeight_fridgeTopSec <= 0.001 || rearPanelThickness_fridgeTopSec <= 0) { // Допуск для высоты
+            console.error("      [FridgeCab][Блок 6] Некорректные размеры для создания задней стенки верхней секции (высота может быть слишком мала).");
+        } else {
+            // --- 6.2 Расчет Y-координаты ЦЕНТРА задней стенки ---
+            const rearPanelCenterY_fridgeTopSec = y_bottom_plane_shelf_above_fridge + rearPanelHeight_fridgeTopSec / 2;
+
+            // --- 6.3 Расчет Z-координаты ЦЕНТРА задней стенки ---
+            const z_rear_plane_of_shelf = shelfAboveFridgeMesh.position.y - shelfAboveFridgeMesh.geometry.parameters.depth / 2; // Ошибка здесь, должно быть .position.z
+            const z_rear_plane_of_shelf_corrected = shelfAboveFridgeMesh.position.z - shelfAboveFridgeMesh.geometry.parameters.depth / 2;
+            const rearPanelCenterZ_fridgeTopSec = z_rear_plane_of_shelf_corrected - rearPanelThickness_fridgeTopSec / 2;
+
+            // --- 6.4 Создание меша задней стенки ---
+            const rearPanelTopSectionMesh_fridge = createPanel(
+                rearPanelWidth_fridgeTopSec,
+                rearPanelHeight_fridgeTopSec,
+                rearPanelThickness_fridgeTopSec,
+                cabinetMaterial, // Можно использовать более тонкий материал HDF, если он есть
+                'frontal',
+                `rear_panel_top_section_fridge_${cabinetUUID.substring(0,4)}`
+            );
+
+            if (rearPanelTopSectionMesh_fridge) {
+                rearPanelTopSectionMesh_fridge.position.set(0, rearPanelCenterY_fridgeTopSec, rearPanelCenterZ_fridgeTopSec);
+                rearPanelTopSectionMesh_fridge.userData.cabinetUUID = cabinetUUID;
+                rearPanelTopSectionMesh_fridge.userData.panelType = 'rearPanelTopSection_fridge';
+                group.add(rearPanelTopSectionMesh_fridge);
+            } else {
+                console.error("      [FridgeCab][Блок 6] Не удалось создать меш задней стенки верхней секции.");
+            }
+        }
+    }
+    // --- КОНЕЦ БЛОКА 6: ЗАДНЯЯ СТЕНКА ВЕРХНЕЙ СЕКЦИИ ---
+    // --- НАЧАЛО БЛОКА 7: ПОЛКИ В ВЕРХНЕЙ СЕКЦИИ ---
+    if (!shelfAboveFridgeMesh || !shelfAboveFridgeMesh.geometry || !shelfAboveFridgeMesh.geometry.parameters) {
+        console.warn("    [FridgeCab][Блок 7] Дно верхней секции (shelfAboveFridgeMesh) не найдено. Полки не будут созданы.");
+    } else if (!roofMesh_fridge || !roofMesh_fridge.geometry || !roofMesh_fridge.geometry.parameters) {
+        console.warn("    [FridgeCab][Блок 7] Крыша (roofMesh_fridge) не найдена. Полки не будут созданы.");
+    } else {
+        const topShelvesCount_fridge = parseInt(cabinetData.shelvesAbove) || 0;
+
+        if (topShelvesCount_fridge > 0) {
+            // --- 7.1 Расчет размеров одной полки ---
+            const shelfW_fridgeTopSec = cabWidthM - 2 * panelThicknessM - 0.002; // Ширина с зазором
+            const shelfH_thickness_fridgeTopSec = panelThicknessM;               // Толщина полки
+            const shelfD_fridgeTopSec = roofMesh_fridge.geometry.parameters.depth - 0.006; // Глубина less then у крыши (и дна секции) on 5 mm
+
+            if (shelfW_fridgeTopSec <= 0 || shelfD_fridgeTopSec <= 0) {
+                console.warn("      [FridgeCab][Блок 7] Некорректные размеры для полок в/с (ширина или глубина <= 0). Полки не будут созданы.");
+            } else {
+                // --- 7.2 Расчет позиций по Y ---
+                const y_top_of_bottom_shelf_of_section = shelfAboveFridgeMesh.position.y + (shelfAboveFridgeMesh.geometry.parameters.height / 2);
+                const y_bottom_of_roof_of_section = roofMesh_fridge.position.y - (roofMesh_fridge.geometry.parameters.height / 2);
+                
+                const availableHeightForShelves_fridge = y_bottom_of_roof_of_section - y_top_of_bottom_shelf_of_section;
+                console.log(`      [FridgeCab][Блок 7] Доступная высота для полок в/с: ${availableHeightForShelves_fridge.toFixed(3)}м (между Y=${y_top_of_bottom_shelf_of_section.toFixed(3)} и Y=${y_bottom_of_roof_of_section.toFixed(3)})`);
+
+                const minRequiredHeight_fridge = (topShelvesCount_fridge * shelfH_thickness_fridgeTopSec) +
+                                            (topShelvesCount_fridge > 1 ? (topShelvesCount_fridge - 1) * 0.010 : 0) +
+                                            (2 * 0.005); // Мин. зазоры сверху/снизу по 5мм
+
+                if (availableHeightForShelves_fridge < minRequiredHeight_fridge) {
+                    console.warn(`      [FridgeCab][Блок 7] Недостаточно высоты (${availableHeightForShelves_fridge.toFixed(3)}м) для ${topShelvesCount_fridge} полок (требуется мин ${minRequiredHeight_fridge.toFixed(3)}м).`);
+                } else {
+                    const shelfSpacingY_fridge_raw = availableHeightForShelves_fridge / (topShelvesCount_fridge + 1);
+                    const shelfSpacingY_fridge_mm = Math.round(shelfSpacingY_fridge_raw * 1000);
+                    const shelfSpacingY_fridge = shelfSpacingY_fridge_mm / 1000;
+                    console.log(`      [FridgeCab][Блок 7] Шаг расположения полок в/с (shelfSpacingY_fridge): ${shelfSpacingY_fridge.toFixed(3)}м`);
+
+                    // --- 7.3 Создание полок в цикле ---
+                    for (let i = 1; i <= topShelvesCount_fridge; i++) {
+                        const shelfName = `top_section_shelf_${i}_fridge_${cabinetUUID.substring(0,4)}`;
+                        const shelfMeshInstance = createPanel(
+                            shelfW_fridgeTopSec,
+                            shelfH_thickness_fridgeTopSec,
+                            shelfD_fridgeTopSec,
+                            cabinetMaterial,
+                            'horizontal',
+                            shelfName
+                        );
+
+                        if (shelfMeshInstance) {
+                            // Позиционирование Y:
+                            const currentShelfBottomYPlane = y_top_of_bottom_shelf_of_section + (shelfSpacingY_fridge * i);
+                            const currentShelfCenterY = currentShelfBottomYPlane + shelfH_thickness_fridgeTopSec / 2;
+
+                            // Позиционирование Z (как у дна секции и крыши):
+                            const shelfCenterZ_fridgeSec = shelfAboveFridgeMesh.position.z - 0.003; // Центр по Z такой же, как у дна секции
+
+                            shelfMeshInstance.position.set(0, currentShelfCenterY, shelfCenterZ_fridgeSec);
+                            shelfMeshInstance.userData.cabinetUUID = cabinetUUID;
+                            shelfMeshInstance.userData.panelType = 'top_section_shelf_fridge';
+                            group.add(shelfMeshInstance);
+                            console.log(`        [FridgeCab][Блок 7] Полка в/с ${i} создана. Pos: Y=${currentShelfCenterY.toFixed(3)}, Z=${shelfCenterZ_fridgeSec.toFixed(3)}`);
+                        }
+                    }
+                }
+            }
+        } else {
+            console.log(`    [FridgeCab][Блок 7] Полки в верхней секции не требуются (кол-во: ${topShelvesCount_fridge}).`);
+        }
+    }
+    // --- КОНЕЦ БЛОКА 7: ПОЛКИ В ВЕРХНЕЙ СЕКЦИИ ---
+    // --- НАЧАЛО БЛОКА 8: ФАСАДЫ ШКАФА ХОЛОДИЛЬНИКА ---
+    console.log(`  [FridgeCab] Блок 8: Создание ФАСАДОВ...`);
+
+    const fridgeType_B8 = cabinetData.fridgeType || 'double';
+    const { material: facadeMaterialToClone_B8, thickness: facadeThicknessMeters_B8 } = getFacadeMaterialAndThickness(cabinetData);
+    const textureDirection_B8 = cabinetData.textureDirection || 'vertical';
+    const facadeGapM_B8 = (cabinetData.facadeGap || 3 / 1000) ; // Используем сохраненный зазор, дефолт 3мм
+
+    // Общая ширина для всех фасадов
+    // Ваше описание: "ширина шкафа минус один зазор между фасадами"
+    // Если это означает, что фасад один по ширине и он чуть уже шкафа на величину одного зазора:
+    let facadeWidth_B8 = cabWidthM - facadeGapM_B8;
+    // Если же имелось в виду, что зазоры по бокам от корпуса, то:
+    // facadeWidth_B8 = cabWidthM - 2 * facadeGapM_B8;
+    // Оставляю ваш вариант:
+    console.log(`    [Блок 8] Общая ширина фасадов: ${facadeWidth_B8.toFixed(3)} (cabWidthM=${cabWidthM.toFixed(3)} - facadeGapM_B8=${facadeGapM_B8.toFixed(3)})`);
+
+
+    // Z-координата центральной плоскости фасадов
+    const facadeCenterZ_B8 = cabDepthM / 2 + facadeThicknessMeters_B8 / 2;
+
+    // Начальная Y-координата для нижней грани первого фасада
+    let currentY_bottom_plane_of_facade = -cabHeightM / 2; // Низ шкафа
+
+    const facadesCreationData = []; // { heightMm, nameSuffix, needsTB9HandleAt: 'top' | 'bottom' | 'none' }
+
+    // 1. Фасад морозильной камеры
+    if (fridgeType_B8 === 'double' && cabinetData.freezerFacadeHeightMm > 0) {
+        facadesCreationData.push({
+            heightMm: cabinetData.freezerFacadeHeightMm,
+            nameSuffix: "freezer",
+            needsTB9HandleAt: handleType === 'aluminum-tv9' ? 'top' : 'none' // ТВ9 обычно сверху морозилки
+        });
+    }
+
+    // 2. Фасад холодильной камеры
+    if (cabinetData.fridgeDoorFacadeHeightMm > 0) {
+        facadesCreationData.push({
+            heightMm: cabinetData.fridgeDoorFacadeHeightMm,
+            nameSuffix: "fridge_door",
+            needsTB9HandleAt: handleType === 'aluminum-tv9' ? 'top' : 'none'
+        });
+    }
+
+    // 3. Верхний фасад №1
+    if (cabinetData.topFacade1HeightMm > 0) {
+        facadesCreationData.push({
+            heightMm: cabinetData.topFacade1HeightMm,
+            nameSuffix: "top_1",
+            // Для самого верхнего фасада (если он один) ручка ТВ9 снизу. Если их два, то у первого сверху.
+            needsTB9HandleAt: handleType === 'aluminum-tv9' ? (cabinetData.topFacade2HeightMm > 0 ? 'top' : 'bottom') : 'none'
+        });
+    }
+
+    // 4. Верхний фасад №2
+    if (cabinetData.topFacade2HeightMm > 0) {
+        facadesCreationData.push({
+            heightMm: cabinetData.topFacade2HeightMm,
+            nameSuffix: "top_2",
+            needsTB9HandleAt: handleType === 'aluminum-tv9' ? 'bottom' : 'none' // У самого верхнего ТВ9 снизу
+        });
+    }
+
+    console.log(`    [Блок 8] Данные для создания фасадов:`, JSON.parse(JSON.stringify(facadesCreationData)));
+
+    facadesCreationData.forEach((facadeInfo, index) => {
+        const facadeHeightM = facadeInfo.heightMm / 1000;
+        if (facadeHeightM <= 0.01) { // Пропускаем фасады с нулевой или слишком маленькой высотой
+            console.log(`      Пропуск фасада ${facadeInfo.nameSuffix} из-за малой высоты: ${facadeHeightM.toFixed(3)}м`);
+            return;
+        }
+
+        const facadeMesh = createPanel(
+            facadeWidth_B8,
+            facadeHeightM,
+            facadeThicknessMeters_B8,
+            facadeMaterialToClone_B8.clone(),
+            'frontal',
+            `facade_${facadeInfo.nameSuffix}_fridge_${cabinetUUID.substring(0,4)}`
+        );
+
+        if (facadeMesh) {
+            // Позиционирование
+            facadeMesh.position.x = 0;
+            facadeMesh.position.y = currentY_bottom_plane_of_facade + facadeHeightM / 2;
+            facadeMesh.position.z = facadeCenterZ_B8;
+
+            facadeMesh.userData.cabinetUUID = cabinetUUID;
+            facadeMesh.userData.isFacade = true;
+
+            // Применение текстуры
+            const actualFacadeMaterial = facadeMesh.material;
+            if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
+                const transformedTexture = applyTextureTransform(
+                    actualFacadeMaterial.map, textureDirection_B8,
+                    facadeWidth_B8, facadeHeightM
+                );
+                if (transformedTexture) {
+                    actualFacadeMaterial.map = transformedTexture;
+                    actualFacadeMaterial.needsUpdate = true;
+                }
+            }
+            group.add(facadeMesh);
+            console.log(`      Фасад "${facadeInfo.nameSuffix}" создан. Y_низ=${currentY_bottom_plane_of_facade.toFixed(3)}, H=${facadeHeightM.toFixed(3)}, Y_центр=${facadeMesh.position.y.toFixed(3)}`);
+
+            // Создание ручки ТВ9
+            if (facadeInfo.needsTB9HandleAt !== 'none') {
+                // Материал для Гола-профилей
+                const golaMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xAAAAAA, // Серый алюминий
+                    metalness: 0.8,
+                    roughness: 0.4,
+                    name: `GolaProfileMat_Tall_${cabinetUUID.substring(0,4)}`
+                });
+                
+                const handleLength_tv9 = facadeWidth_B8;
+                const tb9ProfileWidthOnFacadeMm = 19;
+                const tb9ProfileHeightMm = 30;
+
+                const handleShape_tv9 = new THREE.Shape();
+                handleShape_tv9.moveTo(0, 0); handleShape_tv9.lineTo(tb9ProfileWidthOnFacadeMm, 0);
+                handleShape_tv9.lineTo(tb9ProfileWidthOnFacadeMm, tb9ProfileHeightMm);
+                handleShape_tv9.lineTo(tb9ProfileWidthOnFacadeMm - 1.5, tb9ProfileHeightMm);
+                handleShape_tv9.lineTo(tb9ProfileWidthOnFacadeMm - 1.5, 1);
+                handleShape_tv9.lineTo(0, 1); handleShape_tv9.closePath();
+
+                const handleExtrudeSettings_tv9 = { depth: handleLength_tv9 * 1000, steps: 1, bevelEnabled: false };
+                let handleGeometry_tv9 = null;
+                try {
+                    handleGeometry_tv9 = new THREE.ExtrudeGeometry(handleShape_tv9, handleExtrudeSettings_tv9);
+                    handleGeometry_tv9.translate(0, 0, -handleLength_tv9 * 1000 / 2);
+                    handleGeometry_tv9.scale(1 / 1000, 1 / 1000, 1 / 1000);
+                } catch (e) { console.error(`      [Блок 8] Ошибка геометрии ручки ТВ9 для фасада ${facadeInfo.nameSuffix}:`, e); }
+
+                if (handleGeometry_tv9) {
+                    const handleMesh_tv9 = new THREE.Mesh(handleGeometry_tv9, golaMaterial.clone()); // golaMaterial должен быть определен
+                    handleMesh_tv9.name = `handle_TV9_${facadeInfo.nameSuffix}_${cabinetUUID.substring(0,4)}`;
+                    handleMesh_tv9.userData = { isCabinetPart: true, objectType: 'cabinetHandle', handleType: 'tv9', cabinetUUID: cabinetUUID };
+                    handleMesh_tv9.rotation.y = Math.PI / 2; // Длина ручки по X шкафа
+
+                    handleMesh_tv9.position.x = facadeMesh.position.x; // Центр по X
+                    // Z: Задняя плоскость ручки на передней плоскости фасада
+                    handleMesh_tv9.position.z = facadeMesh.position.z - facadeThicknessMeters_B8 / 2;
+
+                    if (facadeInfo.needsTB9HandleAt === 'top') {
+                        // Ручка СВЕРХУ фасада
+                        const yTopOfFacade = facadeMesh.position.y + facadeHeightM / 2;
+                        handleMesh_tv9.position.y = yTopOfFacade; // Низ ручки на уровне верха фасада
+                    } else { // 'bottom'
+                        // Ручка СНИЗУ фасада, ПЕРЕВЕРНУТА
+                        handleMesh_tv9.rotation.z = Math.PI; // Переворачиваем на 180 градусов вокруг своей оси Z (которая стала Y после первого поворота)
+                        const yBottomOfFacade = facadeMesh.position.y - facadeHeightM / 2;
+                        handleMesh_tv9.position.y = yBottomOfFacade; // "Верх" перевернутой ручки на уровне низа фасада
+                    }
+                    group.add(handleMesh_tv9);
+                    console.log(`        Ручка ТВ9 для фасада "${facadeInfo.nameSuffix}" (положение: ${facadeInfo.needsTB9HandleAt}) создана.`);
+                }
+            }
+            // Обновляем Y для следующего фасада
+            currentY_bottom_plane_of_facade += facadeHeightM + facadeGapM_B8;
+        } else {
+            console.warn(`      Пропущен фасад ${facadeInfo.nameSuffix} из-за нулевой или некорректной высоты: ${facadeInfo.heightMm}мм`);
+        }
+    });
+    // --- КОНЕЦ БЛОКА 8: ФАСАДЫ ШКАФА ХОЛОДИЛЬНИКА ---
+    // Блок 9: Гола-профили (если нужны)
+
+    if (group.children.length === 0) {
+         console.warn("[createDetailedFridgeCabinet] Группа пуста после попытки создания всех частей, возможно, были ошибки в размерах.");
+         // Можно вернуть простой куб как заглушку, если ничего не создалось
+         // const placeholderGeo = new THREE.BoxGeometry(cabWidthM, cabHeightM, cabDepthM);
+         // const placeholderMat = new THREE.MeshBasicMaterial({color: 0x00ff00, wireframe: true});
+         // const placeholderMesh = new THREE.Mesh(placeholderGeo, placeholderMat);
+         // group.add(placeholderMesh);
+         // return group;
+         // Пока вернем null, если совсем пусто
+         if (!(cabWidthM > 0 && cabHeightM > 0 && cabDepthM > 0)) return null;
+    }
+
+    return group;
+}
+
+
+/**
+ * Создает меш Гола-профиля заданной длины.
+ * @param {number} lengthMeters - Длина профиля в метрах.
+ * @param {THREE.Material} material - Материал для профиля.
+ * @param {string} [profileName="golaProfile"] - Имя для меша.
+ * @param {string} [cabinetUUID=""] - UUID родительского шкафа для userData.
+ * @returns {THREE.Mesh | null} Меш Гола-профиля или null при ошибке.
+ */
+function createGolaProfileMesh(lengthMeters, material, profileName = "golaProfile", cabinetUUID) {
+    if (lengthMeters <= 0) {
+        console.warn(`[createGolaProfileMesh] Длина профиля должна быть больше 0. Получено: ${lengthMeters}`);
+        return null;
+    }
+
+    // 1. Определяем Shape сечения Гола-профиля (в мм, потом масштабируем)
+    const golaShape = new THREE.Shape();
+    golaShape.moveTo(0, 0);    // Нижняя точка задней части
+    golaShape.lineTo(0, 5);    // Вверх
+    golaShape.lineTo(14, 5);   // Вперед
+    golaShape.absarc(14, 10, 5, -Math.PI / 2, 0, false); // Дуга вверх-вперед (центр (14,10), радиус 5, от -90 до 0 град)
+    // После дуги мы в точке (14+5=19, 10)
+    golaShape.lineTo(19, 57);  // Вверх до конца видимой части
+    golaShape.lineTo(27, 57);  // Вперед (полная глубина профиля)
+    // "Возвращаемся" для формирования толщины и паза
+    golaShape.lineTo(27, 54);  // Немного вниз
+    golaShape.lineTo(20, 54);  // Назад
+    golaShape.lineTo(20, 10);  // Вниз до уровня центра дуги
+    golaShape.quadraticCurveTo(20, 4, 14, 4); // Кривая к задней части
+    golaShape.lineTo(3, 4);    // Горизонтально назад
+    golaShape.lineTo(3, 0);    // Вниз к начальной точке
+    golaShape.closePath();     // Замыкаем (соединит (3,0) с (0,0))
+
+    // 2. Настройки экструзии
+    const extrudeSettings = {
+        steps: 1,
+        depth: lengthMeters * 1000, // Глубина экструзии = длина профиля в мм
+        bevelEnabled: false
+    };
+
+    let golaGeometry = null;
+    try {
+        golaGeometry = new THREE.ExtrudeGeometry(golaShape, extrudeSettings);
+        
+        // 3. Трансформации геометрии:
+        golaGeometry.translate(0, 0, -lengthMeters * 1000 / 2);
+        golaGeometry.scale(1 / 1000, 1 / 1000, 1 / 1000); // Масштабируем всю геометрию
+        
+    } catch (error) {
+        console.error(`[createGolaProfileMesh] Ошибка создания ExtrudeGeometry:`, error);
+        return null;
+    }
+
+    // 4. Создание меша
+    const golaMesh = new THREE.Mesh(golaGeometry, material); // Используем переданный материал
+    golaMesh.name = `${profileName}_${(lengthMeters * 1000).toFixed(0)}mm`;
+    golaMesh.userData = {
+        isCabinetPart: true,
+        objectType: 'cabinetProfile', // или 'golaProfile'
+        profileType: 'horizontal', // или можно передавать как параметр, если будут разные
+        cabinetUUID: cabinetUUID
+    };
+
+    return golaMesh;
 }
 
 // --- Функция переключения детализации ---
@@ -10852,6 +13472,7 @@ function onWindowResize() {
 
 function updateRendererAndPostprocessingCamera() {
     if (typeof composer !== 'undefined' && composer) { // composer - это ваш объект EffectComposer
+        requestRender();
         // Composer обычно сам обновляет свои пассы при изменении renderPass.camera,
         // но если у вас есть специфичные пассы, которым нужно явно передать камеру:
         if (renderPass) renderPass.camera = activeCamera; // activeCamera импортирована из sceneSetup
@@ -10918,3 +13539,4 @@ window.prepareCabinetForNewConfig = prepareCabinetForNewConfig;
 window.applyConfigMenuSettings = applyConfigMenuSettings;
 window.kitchenGlobalParams = kitchenGlobalParams;
 window.hideAllDimensionInputs = hideAllDimensionInputs;
+window.requestRender = requestRender;

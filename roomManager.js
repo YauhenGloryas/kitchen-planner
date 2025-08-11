@@ -2,6 +2,7 @@ import * as THREE from 'three'; // Импорт ядра Three.js
 
 import { scene, camera, orthoCamera, renderer, activeCamera, setActiveSceneCamera } from './sceneSetup.js'; // Возможно, понадобится renderer для aspect ratio в ortho камере
 import { directionalLight } from './sceneSetup.js';
+
 //import { updateFaceBounds } from './script.js';
 
 let cube, edges;
@@ -128,6 +129,7 @@ export function initRoomManagerDOM() {
             if (typeof updateFaceBounds_RM === 'function') { 
                 updateFaceBounds_RM();
             }
+            window.requestRender();
 
         }, { passive: false });
         console.log("[roomManager] Обработчик 'wheel' для зума добавлен.");
@@ -612,6 +614,8 @@ function createCube(length, height, width, color, rotationX = 0, rotationY = 0) 
          });
      } else { console.log("[createCube] Массив 'cabinets' не инициализирован (6)."); }
 
+     window.requestRender();
+
     //console.log("--- createCube Завершено ---");
 }
 /*
@@ -765,6 +769,8 @@ export function applySize() {
     }
     
     createCube(newLength, newHeight, newWidth, newColor, cube.rotation.x, cube.rotation.y);
+
+    window.requestRender();
 
     lengthInput.value = newLength * 1000;
     heightInput.value = newHeight * 1000;
