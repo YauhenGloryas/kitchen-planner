@@ -3,27 +3,6 @@ window.facadeSetsData = window.facadeSetsData || [];
 
 // --- Данные для Выпадающих Списков (Заглушка) ---
 // В будущем будем загружать из файла
-const facadeMaterialTypes = [
-    { value: 'ldsp', text: 'ЛДСП' },
-    { value: 'agt_supramat', text: 'AGT Supramat' },
-    { value: 'agt_one_side', text: 'AGT односторонний' },
-    { value: 'pet', text: 'B-Matt PET пластик' },
-    { value: 'mdf_smooth', text: 'Крашеный МДФ гладкий' },
-    { value: 'mdf_milled', text: 'Крашеный МДФ с фрезеровкой' },
-    { value: 'cleaf', text: 'CLEAF' }
-];
-
-// Заглушка для текстур - ключ: materialType.value, значение: массив опций
-const facadeTextures = {
-    'ldsp': [{ value: 'oak_natural', text: 'Дуб Натуральный' }, { value: 'walnut_dark', text: 'Орех Темный' }, /*...*/],
-    'agt_supramat': [{ value: 'agt_white', text: 'Белый супермат' }, { value: 'agt_grey', text: 'Серый супермат' }, /*...*/],
-    'agt_one_side': [{ value: 'agt_os_white', text: 'Белый одностор.' }, { value: 'agt_os_grey', text: 'Серый одностор.' }, /*...*/],
-    'pet': [{ value: 'pet_white', text: 'Белый PET' }, { value: 'pet_anthracite', text: 'Антрацит PET' }, /*...*/],
-    'cleaf': [{ value: 'cleaf_concrete', text: 'Бетон' }, { value: 'cleaf_wood', text: 'Дерево Cleaf' }, /*...*/],
-    // Для крашеного МДФ текстур нет
-    'mdf_smooth': [],
-    'mdf_milled': []
-};
 
 export function createCabinetConfigMenu(cabinetIndex, cabinets) {
     const cabinet = cabinets[cabinetIndex];
@@ -889,11 +868,6 @@ function updateFridgeFacadeFieldsLogic(cabinet, configMenuElement, kitchenGlobal
 
     console.log(`  [updateFridgeFacadeFieldsLogic] Результат: freezer=${cabinet.freezerFacadeHeightMm}, fridgeDoor=${cabinet.fridgeDoorFacadeHeightMm}, top1=${cabinet.topFacade1HeightMm}, top2=${cabinet.topFacade2HeightMm}`);
 }
-
-
-
-
-
 
 // --- НОВАЯ Вспомогательная функция для генерации <select> Набора Фасадов ---
 function generateFacadeSetSelectHTML(cabinet) {

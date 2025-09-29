@@ -1,6 +1,6 @@
 import * as THREE from 'three'; // Импорт ядра Three.js
 
-import { GLTFLoader } from './js/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import { scene, camera, orthoCamera, renderer, activeCamera, ambientLight, directionalLight, setActiveSceneCamera, initRenderer } from './sceneSetup.js';
 
@@ -39,6 +39,8 @@ import {
     roomDimensions
     // ... другие необходимые импорты ...
 } from './roomManager.js';
+
+import { controls } from './sceneSetup.js';
 
 
 // Также убедись, что у рендерера включены карты теней
@@ -80,7 +82,9 @@ const gltfLoaderInstance_Preload = new GLTFLoader(); // Можно исполь�
 const modelsToPreload = [
     'oven_450.glb',
     'oven_600.glb',
-    'mkw_362.glb'
+    'mkw_362.glb',
+    'dishwasher_600.glb',
+    'dishwasher_450.glb'
  // Добавьте сюда все нужные модели
     // 'microwave_large.glb',
     // 'fridge_standard.glb',
@@ -138,45 +142,6 @@ function shouldContinue() {
   return continuousRendering || isRotatingNow || isDraggingNow || isPanningNow;
 }
 
-
-/*
-const gltfLoader = new GLTFLoader();
-
-function loadOvenModel(callback) {
-    gltfLoader.load(
-        'assets/models/oven_450.glb',
-        (gltf) => {
-            const oven = gltf.scene;
-
-            // Масштабируем (если нужно)
-            oven.scale.set(1, 1, 1); // Или подгони под размер в метрах, например 0.6, 0.6, 0.6
-
-            // Центрируем (если нужно)
-            oven.position.set(0, 0, 0);
-
-            // Добавляем в сцену или возвращаем в callback
-            if (typeof callback === 'function') {
-                callback(oven);
-            } else {
-                scene.add(oven); // Для теста можно так
-            }
-
-            console.log("Модель духовки загружена");
-        },
-        (xhr) => {
-            console.log(`Загрузка: ${(xhr.loaded / xhr.total) * 100}%`);
-        },
-        (error) => {
-            console.error("Ошибка загрузки духовки:", error);
-        }
-    );
-}
-
-
-loadOvenModel((oven) => {
-    oven.position.set(0, 0, 0); // В центре комнаты
-    cube.add(oven);
-});*/
 
 //предварительная загрузка всех моделей
 /**
@@ -447,8 +412,8 @@ function undoLastAction() {
     const lastAction = actionHistory.pop();
 
     // Удаляем текущие объекты из сцены
-    windows.forEach(obj => cube.remove(obj.mesh));
-    cabinets.forEach(cabinet => cube.remove(cabinet.mesh));
+    windows.forEach(obj => scene.remove(obj.mesh));
+    cabinets.forEach(cabinet => scene.remove(cabinet.mesh));
 
     // Восстанавливаем окна
     windows = lastAction.windows.map(obj => {
@@ -462,7 +427,7 @@ function undoLastAction() {
         mesh.add(edges);
         mesh.position.set(obj.mesh.position.x, obj.mesh.position.y, obj.mesh.position.z);
         mesh.rotation.y = obj.mesh.rotation.y;
-        cube.add(mesh);
+        scene.add(mesh);
         return { ...obj, mesh, edges };
     });
 
@@ -478,7 +443,7 @@ function undoLastAction() {
         mesh.add(edges);
         mesh.position.set(cabinet.mesh.position.x, cabinet.mesh.position.y, cabinet.mesh.position.z);
         mesh.rotation.y = cabinet.mesh.rotation.y;
-        cube.add(mesh);
+        scene.add(mesh);
         return { ...cabinet, mesh, edges };
     });
 
@@ -706,7 +671,7 @@ function addObject(type) {
                     break;
             }
 
-            cube.add(mesh);
+            scene.add(mesh);
             const obj = {
                 mesh: mesh,
                 wallId: wallId,
@@ -779,7 +744,7 @@ function addObject(type) {
                 break;
         }
 
-        cube.add(mesh);
+        scene.add(mesh);
         const obj = {
             mesh: mesh,
             wallId: wallId,
@@ -1206,12 +1171,12 @@ function deleteWindow(windowIndex) {
     if (groupId) {
         for (let i = windows.length - 1; i >= 0; i--) {
             if (windows[i].groupId === groupId) {
-                cube.remove(windows[i].mesh);
+                scene.remove(windows[i].mesh);
                 windows.splice(i, 1);
             }
         }
     } else {
-        cube.remove(window.mesh);
+        scene.remove(window.mesh);
         windows.splice(windowIndex, 1);
     }
     hideWindowMenu();
@@ -1611,7 +1576,7 @@ function deleteCabinet(cabinetIndex) {
     saveState("deleteCabinet", { cabinetIndex: cabinetIndex });
 
     const cabinet = cabinets[cabinetIndex];
-    cube.remove(cabinet.mesh);
+    scene.remove(cabinet.mesh);
     cabinets.splice(cabinetIndex, 1);
     hideCabinetMenu();
 }
@@ -1744,10 +1709,10 @@ function removeCountertop(countertop) {
     // Удаление ребер
     if (countertop.userData?.edges) {
         countertop.userData.edges.geometry?.dispose?.();
-        cube.remove(countertop.userData.edges);
+        scene.remove(countertop.userData.edges);
     }
 
-    cube.remove(countertop);
+    scene.remove(countertop);
     countertops = countertops.filter(ct => ct !== countertop);
     updateHint("Столешница удалена");
 }
@@ -2669,7 +2634,7 @@ function addFreestandingCabinet(intersectPoint) {
 
     // --- Блок 6: Добавление в сцену и создание объекта ---
     // Добавляем шкаф в комнату и сохраняем его в массив cabinets
-    cube.add(mesh);
+    scene.add(mesh);
     const obj = {
         mesh: mesh,
         wallId: 'Bottom', // Привязан к полу
@@ -3401,7 +3366,7 @@ function addAdjacentSocket(socketIndex, direction) {
             break;
     }
 
-    cube.add(mesh);
+    scene.add(mesh);
     const newSocket = {
         mesh: mesh,
         wallId: wallId,
@@ -3662,6 +3627,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
             } else {
                 widthInput.value = Math.round(cabinets[cabinetIndex].width * 1000); // Восстанавливаем старое значение
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -3738,6 +3704,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
                  console.warn("Invalid depth entered, reverting.");
                  depthInput.value = Math.round(cabinet.depth * 1000);
             }
+            requestRender();
             event.stopPropagation(); // Остановка всплытия события
         }
     });
@@ -3767,6 +3734,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
                     updateCabinetPosition(cabinet);
                     updateDimensionsInputPosition(cabinet, cabinets);
                 }
+                requestRender();
                 event.stopPropagation();
             }
         });
@@ -3778,7 +3746,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
     cabinet.boundaries = findNearestCabinets(cabinet, cabinets, config.axis, config.maxSize); // Один раз при выделении
     if (config) {
         distanceLine = createLine(config.lineStart(cabinet), config.lineEnd(cabinet));
-        cube.add(distanceLine);
+        scene.add(distanceLine);
 
         toLeftInput = createDimensionInput(cabinet, config, true);
         toRightInput = createDimensionInput(cabinet, config, false);
@@ -3798,6 +3766,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
                 } else {
                     console.log('Invalid input:', newValueMm, 'Max:', maxValue);
                 }
+                requestRender();
                 event.stopPropagation();
             }
         });
@@ -3820,6 +3789,7 @@ function showCabinetDimensionsInput(cabinet, cabinets) {
                 } else {
                     console.log('Invalid input:', newValueMm, 'Max:', maxValue);
                 }
+                requestRender();
                 event.stopPropagation();
             }
         });
@@ -3881,6 +3851,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
             } else {
                 widthInput.value = Math.round(cabinets[cabinetIndex].width * 1000); // Восстанавливаем старое значение
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -3924,6 +3895,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                     updateDimensionsInputPosition(cabinet, cabinets);
                 }
             }
+            requestRender();
             event.stopPropagation();
         } else {
             // Восстанавливаем старое значение при невалидном вводе
@@ -3989,6 +3961,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                     // Восстанавливаем старое значение при невалидном вводе
                      heightInput.value = Math.round(cabinets[cabinetIndex].height * 1000);
                 }
+                requestRender();
                 event.stopPropagation();
             }
         });
@@ -4052,9 +4025,9 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
 
     // Создаём линии
     distanceLine = createLine(widthLineStart, widthLineEnd);
-    cube.add(distanceLine);
+    scene.add(distanceLine);
     distanceLineDepth = createLine(depthLineStart, depthLineEnd);
-    cube.add(distanceLineDepth);
+    scene.add(distanceLineDepth);
 
     // Поля расстояний
     toLeftInput = document.createElement('input');
@@ -4073,6 +4046,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                 updateCabinetPosition(cabinet);
                 updateDimensionsInputPosition(cabinet, cabinets);
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -4093,6 +4067,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                 updateCabinetPosition(cabinet);
                 updateDimensionsInputPosition(cabinet, cabinets);
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -4113,6 +4088,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                 updateCabinetPosition(cabinet);
                 updateDimensionsInputPosition(cabinet, cabinets);
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -4133,6 +4109,7 @@ function showFreestandingCabinetDimensions(cabinet, cabinets) {
                 updateCabinetPosition(cabinet);
                 updateDimensionsInputPosition(cabinet, cabinets);
             }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -4599,7 +4576,7 @@ function hideAllDimensionInputs() {
     if (heightInput) heightInput.remove(); heightInput = null;
     if (distanceLineDepth) { if(distanceLineDepth.parent) distanceLineDepth.parent.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth.material.dispose(); distanceLineDepth = null; }
     // Добавь сюда другие поля, если они есть
-    if (distanceLineDepth) { cube.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth = null; }
+    if (distanceLineDepth) { scene.remove(distanceLineDepth); distanceLineDepth.geometry.dispose(); distanceLineDepth = null; }
     if (toFrontInput) { toFrontInput.remove(); toFrontInput = null; }
     if (toBackInput) { toBackInput.remove(); toBackInput = null; }
     if (lengthDisplayWall) { lengthDisplayWall.remove(); lengthDisplayWall = null; }
@@ -4662,6 +4639,7 @@ function showWallCountertopDimensions(countertop, countertops, cabinets) {
                 let lb, rb; try{ ({leftBoundary: lb, rightBoundary: rb} = findNearestObstacles(countertop, cabinets, countertops)); } catch(e){lb=undefined; rb=undefined;}
                 updateWallCountertopDimensionsPosition(countertop, lb, rb); // Вызываем позиционер для стенных
             } else { countertopDepthInput.value = Math.round(countertop.userData.depth * 1000); }
+            requestRender();
             event.stopPropagation();
         }
     });
@@ -4724,6 +4702,7 @@ function showWallCountertopDimensions(countertop, countertops, cabinets) {
                         if (distanceLine) { /* ... обновить геометрию distanceLine */ }
                     } else { /* Малая длина */ }
                 } else { /* Неверный ввод */ }
+                requestRender();
                 event.stopPropagation();
             }
         });
@@ -4781,6 +4760,7 @@ function showWallCountertopDimensions(countertop, countertops, cabinets) {
                          if (distanceLine) { /* ... обновить геометрию distanceLine ... */ }
                      } else { /* Малая длина */ }
                  } else { /* Неверный ввод */ }
+                 requestRender();
                  event.stopPropagation();
             }
         });
@@ -4805,7 +4785,7 @@ function showWallCountertopDimensions(countertop, countertops, cabinets) {
              lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
              const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
              distanceLine = new THREE.Line(lineGeometry, lineMaterial);
-             cube.add(distanceLine);
+             scene.add(distanceLine);
          }
     } // Конец if(boundariesValid)
 
@@ -4902,6 +4882,7 @@ function showFreestandingCountertopDimensions(countertop, countertops, cabinets)
                   else { lb = -roomDepth / 2; rb = roomDepth / 2;}
                  updateFreestandingCountertopDimensionsPosition(countertop, lb, rb); // Вызов позиционера для FS
              } else { /* неверный ввод */ }
+             requestRender();
              event.stopPropagation();
         }
     });
@@ -4956,6 +4937,7 @@ function showFreestandingCountertopDimensions(countertop, countertops, cabinets)
                          updateFreestandingCountertopDimensionsPosition(countertop, currentLB, currentRB); // Позиционер для FS
                      } else { /* Малая длина */ }
                  } else { /* Неверный ввод */ }
+                 requestRender();
                  event.stopPropagation();
              }
          });
@@ -5006,6 +4988,7 @@ function showFreestandingCountertopDimensions(countertop, countertops, cabinets)
                           updateFreestandingCountertopDimensionsPosition(countertop, currentLB, currentRB); // Позиционер для FS
                       } else { /* Малая длина */ }
                   } else { /* Неверный ввод */ }
+                  requestRender();
                  event.stopPropagation();
              }
          });
@@ -5697,9 +5680,10 @@ renderer.domElement.addEventListener('mousedown', (event) => {
 
         if (cabinetHitData) {
             // --- НАЧАЛО: Логика для КЛИКА/DRAG НА ШКАФУ ---
+            controls.enabled = false; // <<< ОТКЛЮЧАЕМ КАМЕРУ
             //console.log("Mousedown на шкафу UUID:", cabinetHitData.mesh?.uuid);
             potentialDrag = true; // Устанавливаем флаг потенциального перетаскивания
-            isRotating = false;   // Сбрасываем флаг вращения
+            //isRotating = false;   // Сбрасываем флаг вращения
 
             let dragStarted = false;
             let dragTimeoutId = null;
@@ -5727,7 +5711,7 @@ renderer.domElement.addEventListener('mousedown', (event) => {
                         // Важно: cloneCabinet копирует isDetailed. Если оригинал был детальным, клон тоже будет isDetailed=true
                         console.log(`Клон создан. Данные isDetailed: ${cloned.isDetailed}`);
 
-                        cube.add(cloned.mesh); // Добавляем ПРОСТОЙ меш клона в сцену
+                        scene.add(cloned.mesh); // Добавляем ПРОСТОЙ меш клона в сцену
                         cabinets.push(cloned); // Добавляем ДАННЫЕ клона в массив
                         const cloneIndex = cabinets.length - 1;
 
@@ -5800,7 +5784,7 @@ renderer.domElement.addEventListener('mousedown', (event) => {
             // Клик ЛКМ НЕ по шкафу - начинаем вращение сцены
             //console.log("Mousedown ЛКМ не на шкафу - начинаем вращение.");
             potentialDrag = false; // Сбрасываем потенциальный drag
-            isRotating = true;   // Устанавливаем флаг вращения
+            //isRotating = true;   // Устанавливаем флаг вращения
             previousMouseX = event.clientX;
             previousMouseY = event.clientY;
             renderer.domElement.style.cursor = 'grabbing';
@@ -5816,15 +5800,9 @@ renderer.domElement.addEventListener('mousedown', (event) => {
 
         // Начинаем панорамирование, если не идет drag шкафа
         if (!draggedCabinet) {
-           //console.log(" - Начинаем панорамирование.");
-           isPanning = true;       // <--- Устанавливаем флаг панорамирования
-           isRotating = false;     // <--- Сбрасываем флаг вращения
-           potentialDrag = false;  // <--- Сбрасываем флаг потенциального drag
-           previousPanX = event.clientX;
-           previousPanY = event.clientY;
-           renderer.domElement.style.cursor = 'grabbing'; // Или 'move'
+            renderer.domElement.style.cursor = 'grabbing'; // Или 'move'
 
-           setContinuousRendering(true); // 👀 рендерим пока панорамируем
+            setContinuousRendering(true); // 👀 рендерим пока панорамируем
             // --- Расчет точки панорамирования (panTarget) удаляем ---
 
         } else {
@@ -5838,32 +5816,21 @@ renderer.domElement.addEventListener('mousedown', (event) => {
 // Этот обработчик отвечает ТОЛЬКО за ОСТАНОВКУ ВРАЩЕНИЯ СЦЕНЫ
 document.addEventListener('mouseup', () => {
   // Остановка вращения
-  if (isRotating) {
-    isRotating = false;
+  
+    renderer.domElement.style.cursor = 'default';
+    controls.enabled = true; // <<< ВКЛЮЧАЕМ КАМЕРУ ОБРАТНО
+  
 
-    if (!draggedCabinet) {
-      renderer.domElement.style.cursor = 'default';
+    // Сброс потенциального drag
+    if (potentialDrag) {
+        potentialDrag = false;
     }
-  }
-
-  // Остановка панорамирования
-  if (isPanning) {
-    isPanning = false;
-    if (!isRotating && !draggedCabinet) {
-      renderer.domElement.style.cursor = 'default';
-    }
-  }
-
-  // Сброс потенциального drag
-  if (potentialDrag) {
-    potentialDrag = false;
-  }
 
   // 🆕 Вставляем после остановки всех действий:
   setContinuousRendering(false);  // ⛔ отключаем цикл
   requestRender();                // ✅ перерисовываем один кадр после взаимодействия
 });
-
+/*
 document.addEventListener('mousemove', (event) => {
     if (isRotating && !potentialDrag) {
         const deltaX = event.clientX - previousMouseX;
@@ -5966,7 +5933,7 @@ document.addEventListener('mousemove', (event) => {
         //console.log("Panning: deltaX=", deltaX, "deltaY=", deltaY, "Offset=", panOffset); // Отладка
     }
     // --- КОНЕЦ: Панорамирование ---
-});
+});*/
 
 
 document.addEventListener('keydown', (event) => {
@@ -6175,8 +6142,14 @@ function renderFrame() {
 
   if (!scene || !activeCamera) return;
 
-  if (cube) cube.updateMatrixWorld(true);
-  else scene.updateMatrixWorld(true);
+   // --- ИЗМЕНЕНИЕ: Добавляем controls.update() ---
+  // Это должно быть здесь, чтобы рассчитать позицию камеры для этого кадра
+  if (controls && controls.enabled) {
+      controls.update();
+  }
+
+// --- ИЗМЕНЕНИЕ: Просто обновляем всю сцену, а не только куб ---
+  scene.updateMatrixWorld(true);
 
   if (typeof composer !== 'undefined' && composer) {
     composer.render();
@@ -6185,10 +6158,10 @@ function renderFrame() {
   }
 
   // --- Обновление UI/оверлеев ---
-  const isRotatingNow = typeof isRotating !== 'undefined' && isRotating;
+  //const isRotatingNow = typeof isRotating !== 'undefined' && isRotating;
   const isDraggingNow = typeof draggedCabinet !== 'undefined' && !!draggedCabinet;
 
-  const rotationChanged = cube ? (cube.rotation.y !== lastRotationY) : false;
+  //const rotationChanged = cube ? (cube.rotation.y !== lastRotationY) : false;
   let positionChanged = false;
 
   if (selectedCabinets && selectedCabinets.length === 1) {
@@ -6206,7 +6179,7 @@ function renderFrame() {
     // updateDimensionsInputPosition(draggedCabinet, cabinets);
   } else if (selectedCabinets && selectedCabinets.length === 1) {
     const selectedObject = selectedCabinets[0];
-    if (selectedObject && (rotationChanged || positionChanged)) {
+    if (selectedObject && (positionChanged)) {
       const isCountertop = selectedObject.userData?.type === 'countertop';
       if (isCountertop) {
         const wallId = selectedObject.userData.wallId;
@@ -6232,7 +6205,6 @@ function renderFrame() {
     }
   }
 
-  if (cube) lastRotationY = cube.rotation.y;
   if (selectedCabinets && selectedCabinets.length === 1) {
     const selectedObject = selectedCabinets[0];
     if (selectedObject) {
@@ -6253,9 +6225,6 @@ function renderFrame() {
     requestRender();
   }
 }
-
-
-
 
 
 let facadeOptionsData = null; // Глобальная переменная для хранения данных
@@ -6392,13 +6361,25 @@ async function init() {
     }
 
     initRenderer('canvasContainer');
+    controls.addEventListener('change', () => {
+      // Каждый раз, когда OrbitControls меняет камеру (даже во время инерции),
+      // мы запрашиваем перерисовку одного кадра.
+      requestRender();
+
+      // Это также идеальное место для обновления UI, которое зависит от вида камеры!
+      if (selectedCabinets && selectedCabinets.length === 1) {
+        // Обновляем позицию инпутов размеров, так как изменение вида камеры требует их пересчета.
+        updateDimensionsInputPosition(selectedCabinets[0], cabinets);
+      }
+    });
     initRoomManagerDOM();
 
     const applySizeButton = document.getElementById('applySizeButton');
-    if (applySizeButton) {
+   if (applySizeButton) {
       applySizeButton.addEventListener('click', () => {
         applyRoomSize();
-        requestRender(); // Обновляем после применения размеров
+        // requestRender() здесь все еще полезен на случай, если размеры не изменились, но цвет да.
+        requestRender();
       });
     }
 
@@ -6407,7 +6388,6 @@ async function init() {
       leftButton.addEventListener('click', () => {
         setLeftView();
         updateRendererAndPostprocessingCamera();
-        requestRender(); // После смены камеры
       });
     }
 
@@ -6416,7 +6396,6 @@ async function init() {
       frontButton.addEventListener('click', () => {
         setFrontView();
         updateRendererAndPostprocessingCamera();
-        requestRender();
       });
     }
 
@@ -6425,7 +6404,6 @@ async function init() {
       topButton.addEventListener('click', () => {
         setTopView();
         updateRendererAndPostprocessingCamera();
-        requestRender();
       });
     }
 
@@ -6434,7 +6412,6 @@ async function init() {
       isometricButton.addEventListener('click', () => {
         setIsometricView();
         updateRendererAndPostprocessingCamera();
-        requestRender();
       });
     }
 
@@ -6450,7 +6427,7 @@ async function init() {
     height = Math.max(100, Math.min(10000, height)) / 1000;
     width = Math.max(100, Math.min(10000, width)) / 1000;
 
-    createCube(length, height, width, color, THREE.MathUtils.degToRad(30), THREE.MathUtils.degToRad(-30));
+    createCube(length, height, width, color);
     if (!cube) {
       throw new Error("Не удалось создать куб.");
     }
@@ -6628,7 +6605,7 @@ function addCabinet(intersectPoint) {
 
     // --- Блок 6: Добавление в сцену и создание объекта ---
     // Добавляем шкаф в комнату и сохраняем его в массив cabinets
-    cube.add(mesh);
+    scene.add(mesh);
     mesh.renderOrder = 1;
     const obj = {
         mesh: mesh,
@@ -6791,7 +6768,7 @@ function addUpperCabinet(intersectPoint) {
 
     // --- Блок 6: Добавление в сцену и создание объекта ---
     // Добавляем шкаф в комнату и сохраняем его в массив cabinets
-    cube.add(mesh);
+    scene.add(mesh);
     const obj = {
         mesh: mesh,
         wallId: wallId,
@@ -7187,9 +7164,9 @@ function loadProject() {
                     const roomWidth = roomData.width || 2.5;   // Это currentHeight (Z)
                     
                     // createCube из roomManager.js, он обновит currentLength, etc.
-                    // и установит дефолтное вращение и цвет
-                    // Передаем дефолтные вращения, так как мы их не сохраняем
-                    createCube(roomLength, roomHeight, roomWidth, '#d3d3d3', THREE.MathUtils.degToRad(30), THREE.MathUtils.degToRad(-30)); 
+                    // и установит и цвет
+                    
+                    createCube(roomLength, roomHeight, roomWidth, '#d3d3d3'); 
                     
                     // Обновляем значения в UI комнаты
                     if(document.getElementById('length')) document.getElementById('length').value = roomLength * 1000;
@@ -7202,7 +7179,6 @@ function loadProject() {
                     else if (window.camera) { // Ручной сброс, если нет функции
                         window.camera.position.set(0,0,10); window.camera.fov = 30; window.camera.updateProjectionMatrix(); window.camera.lookAt(0,0,0);
                     }
-                     if (window.zoomSlider) window.zoomSlider.value = 10; // Дефолтный зум для слайдера
 
                     // --- 3. Восстановление kitchenGlobalParams ---
                     if (projectState.kitchenParams) {
@@ -7250,7 +7226,7 @@ function loadProject() {
                                 case "Left": mesh.position.set(-cL/2 + winData.offsetFromParentWall+w_depth/2, -cW/2 + winData.offsetBottom+w_height/2, -cH/2 + winData.offsetAlongWall+w_width/2); mesh.rotation.y=THREE.MathUtils.degToRad(90); break;
                                 case "Right": mesh.position.set(cL/2 - winData.offsetFromParentWall-w_depth/2, -cW/2 + winData.offsetBottom+w_height/2, -cH/2 + winData.offsetAlongWall+w_width/2); mesh.rotation.y=THREE.MathUtils.degToRad(-90); break;
                             }
-                            cube.add(mesh); // cube из roomManager
+                            scene.add(mesh); // cube из roomManager
                             const newWindowObj = { ...winData, mesh, edges };
                             windows.push(newWindowObj);
                         });
@@ -7352,7 +7328,7 @@ function loadProject() {
                             }
                             window.updateCabinetPosition(newCabObj); // Позиционирует newCabObj.mesh
                             
-                            cube.add(newCabObj.mesh);
+                            scene.add(newCabObj.mesh);
                             cabinets.push(newCabObj);
 
                             if (newCabObj.isDetailed) { // Если шкаф был сохранен как детализированный
@@ -7826,7 +7802,7 @@ function applyKitchenParams() {
              cabinet.edges.raycast = () => {};
              cabinet.mesh.add(cabinet.edges);
              updateCabinetPosition(cabinet); // Position it
-             cube.add(cabinet.mesh); // Add to scene
+             scene.add(cabinet.mesh); // Add to scene
         } else if (!cabinet.mesh && isOriginallyDetailed) {
              console.warn(`Детализированный шкаф (индекс ${index}, ID ${cabinet.id_data}) не имеет ссылки на mesh (должна быть старая группа). Восстановление может быть неточным.`);
              // This case is problematic, as we need the old mesh's transform for newDetailedGroup
@@ -7866,7 +7842,7 @@ function applyKitchenParams() {
                 cabinet.mesh = newDetailedGroup; 
                 cabinet.isDetailed = true;       
                 cabinet.edges = null;
-                cube.add(newDetailedGroup);      
+                scene.add(newDetailedGroup);      
             } else {
                  console.error(`Не удалось воссоздать детализированную группу для индекса ${index}. Шкаф останется/станет простым.`);
                  cabinet.isDetailed = false; 
@@ -7879,7 +7855,7 @@ function applyKitchenParams() {
                       cabinet.edges = new THREE.LineSegments(edgesGeom, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
                       cabinet.edges.raycast = () => {}; cabinet.mesh.add(cabinet.edges);
                      cabinet.mesh.position.copy(oldGroup.position); cabinet.mesh.rotation.copy(oldGroup.rotation); cabinet.mesh.scale.copy(oldGroup.scale);
-                     cube.add(cabinet.mesh);
+                     scene.add(cabinet.mesh);
                  } else if (cabinet.mesh) { // If it became a simple mesh somehow
                       if (cabinet.mesh.geometry) cabinet.mesh.geometry.dispose();
                       cabinet.mesh.geometry = new THREE.BoxGeometry(Math.max(0.01, cabinet.width || 0.01), Math.max(0.01, cabinet.height || 0.01), Math.max(0.01, cabinet.depth || 0.01));
@@ -8090,6 +8066,20 @@ export function applyConfigMenuSettings(cabinetIndex) { // НОВОЕ ИМЯ, Б
     }
     if (newSettings.topFacade2HeightMm !== undefined && !isNaN(parseFloat(newSettings.topFacade2HeightMm))) {
         cabinet.topFacade2HeightMm = Math.max(0, Math.round(parseFloat(newSettings.topFacade2HeightMm)));
+    }
+    // --- Логика для Посудомойки ---
+    if (newSettings.dishwasherWidth !== undefined && cabinet.cabinetConfig === 'dishwasher') {
+        // 1. Сохраняем выбранную опцию ('450' или '600') в объекте шкафа
+        cabinet.dishwasherWidth = newSettings.dishwasherWidth; 
+        
+        // 2. Преобразуем строковое значение в число и метры
+        const newWidthMeters = parseFloat(newSettings.dishwasherWidth) / 1000;
+
+        // 3. Проверяем, что значение корректно, и ПРИМЕНЯЕМ его как ОСНОВНУЮ ШИРИНУ шкафа
+        if (!isNaN(newWidthMeters) && newWidthMeters > 0) {
+            cabinet.width = newWidthMeters; 
+            console.log(`[ACMS] Для посудомойки установлена новая ширина шкафа: ${cabinet.width} м`);
+        }
     }
 
 
@@ -8469,7 +8459,7 @@ function createCountertop(selectedCabinets) {
         countertop.userData.edges = edges; // Сохраняем ссылку
 
         // Добавляем в сцену и массив
-        cube.add(countertop); // Добавляем в комнату
+        scene.add(countertop); // Добавляем в комнату
         countertops.push(countertop); // Добавляем в общий массив столешниц
         console.log('Freestanding countertop created:', countertop.uuid);
         updateHint('Столешница для свободно стоящего шкафа добавлена!');
@@ -8544,7 +8534,7 @@ function createCountertop(selectedCabinets) {
                 : material.clone(), // Сохраняем начальный материал
             heightDependsOnGlobal: true
         };
-        cube.add(countertop); // Добавляем в cube
+        scene.add(countertop); // Добавляем в cube
         countertops.push(countertop);
         console.log('Countertops array:', countertops); // Проверим
 
@@ -8661,7 +8651,7 @@ function createCountertopFromData(ctData) { // ctData - это объект из
 
     // Добавление в сцену и массив
     if (cube) { 
-        cube.add(countertopMesh);
+        scene.add(countertopMesh);
     } else { /* ... ошибка ... */ }
 
     // Добавляем в ГЛОБАЛЬНЫЙ массив countertops
@@ -9171,7 +9161,7 @@ const supportedConfigs = ['swing', 'drawers']; // Поддерживаемые �
 // В script.js
 
 // Список поддерживаемых конфигураций для основной функции детализации
-const generalDetailingSupportedConfigs = ['swing', 'drawers', 'falsePanel', 'oven', 'tallOvenMicro', 'fridge']; // Можно вынести как константу модуля
+const generalDetailingSupportedConfigs = ['swing', 'drawers', 'falsePanel', 'oven', 'tallOvenMicro', 'fridge', 'dishwasher']; // Можно вынести как константу модуля
 
 /**
  * Функция-диспетчер для получения детализированного представления шкафа.
@@ -9229,6 +9219,13 @@ function getDetailedCabinetRepresentation(cabinetData) {
     ) {
         console.log(`[Dispatcher] -> Вызов createDetailedFridgeCabinetGeometry для '${cabinetData.cabinetConfig}'`);
         return createDetailedFridgeCabinetGeometry(cabinetData); // <--- ВЫЗОВ НОВОЙ ФУНКЦИИ
+    } else if ( // <--- НОВЫЙ БЛОК ДЛЯ FRIDGE ---
+        (cabinetData.type === 'lowerCabinet') &&
+        cabinetData.cabinetType === 'straight' &&
+        cabinetData.cabinetConfig === 'dishwasher'
+    ) {
+        console.log(`[Dispatcher] -> Вызов createDetailedFridgeCabinetGeometry для '${cabinetData.cabinetConfig}'`);
+        return createDetailedDishwasherGeometry(cabinetData); // <--- ВЫЗОВ НОВОЙ ФУНКЦИИ
     }
     // --- Добавьте сюда 'else if' для других типов и их функций детализации ---
     // Например, если у вас будет отдельная функция для верхних шкафов:
@@ -13151,6 +13148,255 @@ function createDetailedFridgeCabinetGeometry(cabinetData) {
     return group;
 }
 
+/**
+ * Создает THREE.Group, представляющую детализированную модель шкафа для посудомойки.
+ * @param {object} cabinetData - Объект шкафа из массива 'cabinets'.
+ * @returns {THREE.Group | null} Группа со всеми частями шкафа или null при ошибке.
+ */
+function createDetailedDishwasherGeometry(cabinetData) {
+    console.log(`[Dishwasher] Начало детализации для шкафа UUID: ${cabinetData.mesh.uuid}`);
+
+    const group = new THREE.Group();
+    group.userData.isDetailedCabinet = true;
+    group.userData.objectType = 'cabinet';
+    group.userData.cabinetConfig = 'dishwasher'; // Устанавливаем конфиг
+    const cabinetUUID = cabinetData.mesh.uuid;
+
+    // --- 1. Основные параметры ---
+    const width = cabinetData.width;   // Ширина модуля (ожидается 0.45 или 0.6)
+    const height = cabinetData.height; // Высота модуля (высота нижних шкафов)
+    const depth = cabinetData.depth;   // Глубина модуля
+
+    const handleType = kitchenGlobalParams.handleType || 'standard';
+    const facadeGapM = cabinetData.facadeGap || (3 / 1000);
+
+    // --- Материалы ---
+    // Материал для перемычки (из материала корпуса)
+    const cabinetMaterial = new THREE.MeshStandardMaterial({
+        color: cabinetData.initialColor,
+        roughness: 0.8, metalness: 0.1
+    });
+    // Материал для фасада
+    const { material: facadeMaterialToClone, thickness: facadeThicknessMeters } = getFacadeMaterialAndThickness(cabinetData);
+    // Материал для ручек/профилей
+    const golaMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xAAAAAA, metalness: 0.8, roughness: 0.4 
+    });
+
+
+    // --- 2. Загрузка и размещение 3D-модели посудомойки ---
+    // Используем напрямую сохраненную настройку из меню, а не реальную ширину. Это надежнее.
+    const dishwasherWidthType = cabinetData.dishwasherWidth || '600'; // '450' или '600'. '600' - значение по умолчанию
+    const dishwasherModelFileName = `dishwasher_${dishwasherWidthType}.glb`; // dishwasher_450.glb или dishwasher_600.glb
+
+    const dishwasherModel = getPreloadedModelClone(dishwasherModelFileName);
+
+    if (dishwasherModel) {
+        console.log(`[Dishwasher] Модель ${dishwasherModelFileName} получена из кэша.`);
+        dishwasherModel.name = `dishwasher_model_${cabinetUUID.substring(0, 4)}`;
+        dishwasherModel.userData = { isCabinetPart: true, objectType: 'appliance_dishwasher', cabinetUUID: cabinetUUID };
+        
+        // Позиционируем модель. Origin модели (0,0,0) должен быть в левом нижнем переднем углу.
+        // Ставим ее на "пол" внутри габаритного куба
+        const modelX = -width / 2 + dishwasherWidthType / 2000;
+        const modelY = -height / 2 - kitchenGlobalParams.plinthHeight / 1000;
+        // Центрируем по ширине и сдвигаем к передней части
+        const modelZ = depth / 2; // Предполагаем, что глубина модели посудомойки ~600мм
+        dishwasherModel.position.set(modelX, modelY, modelZ);
+        
+        // Масштабирование, если нужно. Если модели в метрах, то 1,1,1.
+        dishwasherModel.scale.set(1, 1, 1);
+                // --- ИЗМЕНЕНИЕ 3: Применение материала металла к модели ---
+        dishwasherModel.traverse((child) => {
+            if (child.isMesh) {
+                // Опционально: освобождаем старые материалы, чтобы избежать утечек памяти
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+                // Присваиваем новый материал (клонируем на всякий случай)
+                child.material = golaMaterial.clone(); 
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+
+        group.add(dishwasherModel);
+
+    } else {
+        console.error(`[Dishwasher] Модель ${dishwasherModelFileName} НЕ НАЙДЕНА в кэше!`);
+        // Можно создать красную заглушку, как в функции для духовки, чтобы было видно ошибку
+        const placeholderGeo = new THREE.BoxGeometry(width * 0.9, height * 0.9, depth * 0.9);
+        const placeholderMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+        const errorPlaceholder = new THREE.Mesh(placeholderGeo, placeholderMat);
+        errorPlaceholder.name = "DISHWASHER_ERROR_PLACEHOLDER";
+        group.add(errorPlaceholder);
+    }
+
+
+    // --- 3. Расчет размеров и создание фасада ---
+    // Эта логика полностью заимствована из createDetailedCabinetGeometry для 'swing'
+    let facadeHeight = 0;
+    let facadeCenterYOffset = 0;
+    const tb9HandleHeightMeters = 30 / 1000;
+
+    if (handleType === 'aluminum-tv9') {
+        // Высота = общая высота - зазор под ручкой - высота ручки
+        facadeHeight = height - facadeGapM - tb9HandleHeightMeters;
+        // Смещение центра фасада вниз
+        facadeCenterYOffset = -(facadeGapM + tb9HandleHeightMeters) / 2;
+    } else if (handleType === 'gola-profile') {
+        // Рассчитываем актуальную высоту Гола (как в вашей функции)
+        const boxAvailableHeightMeters = (kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness - kitchenGlobalParams.plinthHeight) / 1000;
+        const minGolaHeightMeters = (kitchenGlobalParams.golaMinHeightMm || 30) / 1000;
+        const actualGolaHeightMeters = calculateActualGolaHeight(
+            minGolaHeightMeters * 1000, facadeGapM * 1000, boxAvailableHeightMeters * 1000
+        ) / 1000;
+
+        facadeHeight = height - actualGolaHeightMeters;
+        facadeCenterYOffset = -actualGolaHeightMeters / 2;
+    } else { // 'standard'
+        facadeHeight = height - facadeGapM;
+        facadeCenterYOffset = -facadeGapM / 2;
+    }
+
+    if (facadeHeight <= 0) {
+        console.error(`[Dishwasher] Расчетная высота фасада <= 0: ${facadeHeight}`);
+    } else {
+        // Для посудомойки всегда один фасад
+        const facadeWidth = width - facadeGapM; // Зазор по бокам
+
+        const facadeMesh = createPanel(
+            facadeWidth, facadeHeight, facadeThicknessMeters,
+            facadeMaterialToClone, // Передаем материал для клонирования
+            'frontal', `facade_dishwasher`
+        );
+
+        if (facadeMesh) {
+            // Позиция фасада: спереди шкафа
+            const facadeCenterZ = depth / 2 + facadeThicknessMeters / 2;
+            facadeMesh.position.set(0, facadeCenterYOffset, facadeCenterZ); // X=0 т.к. один фасад
+            facadeMesh.userData.cabinetUUID = cabinetUUID;
+
+            // Наложение текстуры (как в вашей функции)
+            const actualFacadeMaterial = facadeMesh.material;
+            if (actualFacadeMaterial.map?.isTexture) {
+                const textureDirection = cabinetData.textureDirection || 'vertical';
+                const transformedTexture = applyTextureTransform(
+                    actualFacadeMaterial.map, textureDirection, facadeWidth, facadeHeight
+                );
+                actualFacadeMaterial.map = transformedTexture;
+                actualFacadeMaterial.needsUpdate = true;
+            }
+            group.add(facadeMesh);
+
+            // --- 4. Создание ручки (Gola или TV9), если требуется ---
+            if (handleType === 'gola-profile') {
+                const golaProfileMesh = createGolaProfileMesh(width, golaMaterial, `golaProfile_Dishwasher`, cabinetUUID);
+                if (golaProfileMesh) {
+                    golaProfileMesh.rotation.y = Math.PI / 2;
+                    // Y позиция такая же, как у верхнего профиля в createDetailedCabinetGeometry
+                    const golaTopCenterY = height / 2 - 58 / 1000; 
+                    const golaTopCenterZ = depth / 2; // Передняя грань шкафа
+                    golaProfileMesh.position.set(0, golaTopCenterY, golaTopCenterZ);
+                    group.add(golaProfileMesh);
+                }
+            } else if (handleType === 'aluminum-tv9') {
+                // Код для ручки TV9, адаптированный из вашей функции
+                // ... (Вставьте сюда ваш код создания геометрии ручки TB9) ...
+                // ВАЖНО: я предполагаю, что у вас есть готовый код для создания геометрии ручки.
+                // Я просто напишу логику ее позиционирования.
+                
+                const handleWidthMm = 19; // Ширина профиля ручки
+                const handleHeightMm = 30; // Высота профиля ручки = 30
+                const handleLengthMeters = width; // Длина ручки = ширина фасада
+
+                // Создаем Shape ручки (простой прямоугольник)
+                const handleShape = new THREE.Shape();
+                handleShape.moveTo(0, 0);
+                handleShape.lineTo(handleWidthMm, 0);
+                handleShape.lineTo(handleWidthMm, handleHeightMm);
+                handleShape.lineTo(handleWidthMm - 1.5, handleHeightMm);
+                handleShape.lineTo(handleWidthMm - 1.5, 1);
+                handleShape.lineTo(0, 1);
+                handleShape.closePath();
+                const handleExtrudeSettings = {
+                    steps: 1,
+                    depth: handleLengthMeters * 1000, // Глубина экструзии в мм
+                    bevelEnabled: false
+                };
+                let handleGeometry = null; 
+                try {
+                    handleGeometry = new THREE.ExtrudeGeometry(handleShape, handleExtrudeSettings);
+                    // Центрируем по Z (оси выдавливания) и масштабируем
+                    handleGeometry.translate(0, 0, -handleLengthMeters * 1000 / 2);
+                    handleGeometry.scale(1/1000, 1/1000, 1/1000);
+                } catch (e) { console.error("Ошибка создания геометрии ручки TB9:", e); }
+
+                if (handleGeometry) {
+                    const handleMesh = new THREE.Mesh(handleGeometry, golaMaterial.clone()); 
+                    handleMesh.rotation.y = Math.PI / 2;
+                    const facadeTopY = facadeCenterYOffset + facadeHeight / 2;
+                    const handleCenterY = facadeTopY; // Уточнено, ручка на уровне верха фасада
+                    const handleCenterX = 0;
+                    const handleCenterZ = facadeCenterZ - facadeThicknessMeters / 2 + (19 / 1000); // 19мм - ширина профиля ручки
+                    handleMesh.position.set(handleCenterX, handleCenterY, handleCenterZ);
+                    group.add(handleMesh);
+                }
+                // Примерный код, если у вас есть функция createTB9HandleGeometry(length)
+                // const handleMesh = createTB9HandleGeometry(facadeWidth); 
+                // handleMesh.material = golaMaterial.clone();
+
+                // Позиционирование ручки
+                //const facadeTopY = facadeCenterYOffset + facadeHeight / 2;
+                //const handleCenterY = facadeTopY; // Ручка располагается на уровне верха фасада
+                //const handleCenterZ = facadeCenterZ - facadeThicknessMeters / 2 + (19 / 1000); // 19мм - ширина профиля
+                
+                // handleMesh.position.set(0, handleCenterY, handleCenterZ);
+                // group.add(handleMesh);
+                console.log("[Dishwasher] Требуется создать ручку TV9. Логику создания геометрии нужно перенести сюда.");
+            }
+        }
+    }
+
+
+    // --- 5. Создание верхней перемычки (условно) ---
+    // Условие: высота столешницы из глобальных параметров > 840мм
+    const bottomCountrtopLevel = kitchenGlobalParams.countertopHeight - kitchenGlobalParams.countertopThickness;
+    if (bottomCountrtopLevel > 838) {
+        console.log(`[Dishwasher] Создание перемычки, т.к. высота до столешницы ${bottomCountrtopLevel} > 8838`);
+
+        const jumperWidth = width;
+        const jumperHeight = getPanelThickness(); // Толщина материала
+        const jumperDepth = 400 / 1000; // Стандартная глубина царги, ПРОВЕРЬТЕ это значение
+
+        const jumperMesh = createPanel(
+            jumperWidth, jumperHeight, jumperDepth,
+            cabinetMaterial, // Используем материал КОРПУСА
+            'horizontal', 'dishwasher_jumper'
+        );
+
+        if (jumperMesh) {
+            // Позиционируем перемычку вверху шкафа, как переднюю царгу
+            const jumperCenterY = height / 2 - jumperHeight / 2;
+            let jumperCenterZ = depth / 2 - jumperDepth / 2; // Базовая позиция (у передней грани)
+            if (handleType === 'gola-profile') {
+                jumperCenterZ -= 28 / 1000; // Сдвигаем назад (вглубь) на 30 мм
+                console.log(`[Dishwasher] Перемычка сдвинута назад для Gola-профиля.`);
+            }
+
+            jumperMesh.position.set(0, jumperCenterY, jumperCenterZ);
+            jumperMesh.userData.cabinetUUID = cabinetUUID;
+            group.add(jumperMesh);
+        }
+    }
+
+    return group;
+}
+
 
 /**
  * Создает меш Гола-профиля заданной длины.
@@ -13264,7 +13510,7 @@ function toggleCabinetDetail(cabinetIndex) {
             cabinet.mesh = detailedGroup;
             cabinet.isDetailed = true;
             cabinet.edges = null;
-            cube.add(detailedGroup); // Добавляем в ТЕКУЩИЙ куб
+            scene.add(detailedGroup); // Добавляем в ТЕКУЩИЙ куб
 
             if (wasSelected) applyHighlight(detailedGroup);
             const button = document.getElementById('toggleDetailBtn');
@@ -13301,7 +13547,7 @@ function toggleCabinetDetail(cabinetIndex) {
             cabinet.mesh = simpleMesh;
             cabinet.isDetailed = false;
             cabinet.edges = edges;
-            cube.add(simpleMesh);
+            scene.add(simpleMesh);
 
             if (wasSelected) {
                  applyHighlight(simpleMesh);
@@ -13540,3 +13786,5 @@ window.applyConfigMenuSettings = applyConfigMenuSettings;
 window.kitchenGlobalParams = kitchenGlobalParams;
 window.hideAllDimensionInputs = hideAllDimensionInputs;
 window.requestRender = requestRender;
+
+kitchenGlobalParams.countertopHeight
