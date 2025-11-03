@@ -28,7 +28,8 @@
 </head>
 <body>
     <div id="topMenu">
-        <button class="top-btn" onclick="undoLastAction()">Undo</button>
+        <button id="undoButton" class="top-btn">Undo</button>
+        <button id="redoButton" class="top-btn">Redo</button>
         <button class="top-btn" id="leftViewButton">Left</button>
         <button class="top-btn" id="frontViewButton">Front</button>
         <button class="top-btn" id="topViewButton">Top</button>
@@ -43,35 +44,29 @@
             <label>Глубина (мм):</label><input type="number" id="width" value="2500" min="100" max="10000"><br>
             <label>Цвет:</label><input type="color" id="cubeColor" value="#d3d3d3"><br>
             <button id="applySizeButton">Применить</button>
+            <button id="rebuildSceneButton">Перестроить модель</button>
             <button id="kitchenParamsButton">Общие параметры кухни</button>
+            <button id="detailAllButton">Детализировать все</button>
+            <button id="simplifyAllButton">Упростить все</button>
         </div>
         <div id="wallEditMenu">
             <h3>Редактирование стены</h3>
-            <button onclick="addObject('window')">Добавить окно</button>
-            <button onclick="addObject('socket')">Розетка</button>
-            <button onclick="addObject('radiator')">Радиатор</button>
-            <button onclick="addObject('column')">Колонна</button>
-            <button onclick="addObject('door')">Дверь</button>
-            <button onclick="addObject('apron')">Фартук</button>
+            <!-- Добавляем класс 'draggable-object-button' и data-type -->
+            <button class="draggable-object-button" data-type="window">Добавить окно</button>
+            <button class="draggable-object-button" data-type="socket">Розетка</button>
+            <button class="draggable-object-button" data-type="radiator">Радиатор</button>
+            <button class="draggable-object-button" data-type="column">Колонна</button>
+            <button class="draggable-object-button" data-type="door">Дверь</button>
+            <button class="draggable-object-button" data-type="apron">Фартук</button>
         </div>
         <div id="lowerCabinetContainer" style="display: none;">
-            <button class="lower-cabinet" draggable="true">Нижний шкаф</button>
-            <button class="upper-cabinet" draggable="true">Верхний шкаф</button>
+            <button class="lower-cabinet draggable-object-button" draggable="true" data-type="lowerCabinet">Нижний шкаф</button>
+            <button class="upper-cabinet draggable-object-button" draggable="true" data-type="upperCabinet">Верхний шкаф</button>
         </div>
     </div>
     <div id="canvasContainer">
-        <div id="rotateXContainer">
-            <input type="range" id="rotateX" min="-180" max="180" value="0">
-        </div>
-        <div id="rotateYContainer">
-            <input type="range" id="rotateY" min="-180" max="180" value="0">
-        </div>
     </div>
     <div id="rightPanel">
-        <div id="zoomContainer">
-            <label>Zoom</label>
-            <input type="range" id="zoom" min="1" max="20" value="10">
-        </div>
         <div id="rotationValues">
             <label>Угол X:</label><input type="text" id="rotateXValue" class="angle-display" value="0°" readonly><br>
             <label>Угол Y:</label><input type="text" id="rotateYValue" class="angle-display" value="0°" readonly>
@@ -99,6 +94,6 @@
         </div>
     </div>
     <div id="hint-bar"></div>
-    <script type="module" src="script.js"></script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>

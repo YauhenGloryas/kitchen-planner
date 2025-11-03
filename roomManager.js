@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { scene, camera, orthoCamera, renderer, activeCamera, setActiveSceneCamera, controls } from './sceneSetup.js';
 import { directionalLight } from './sceneSetup.js';
+import { updateRoomReference } from './inputManager.js';
 
 //import { updateFaceBounds } from './script.js';
 
@@ -305,119 +306,123 @@ function handleRoomClick(mouseNDC, currentActiveCamera) {
     return false;
 }
 
-// --- ИЗМЕНЕНИЕ: Функция больше не принимает и не использует параметры вращения.
+
 export function createCube(length, height, width, color) {
-    const detailedCabinetData = [];
-    let newCube = null;
-    let newEdges = null;
+    // --- 1. Сохраняем старые материалы стен ---
+    const oldMaterialIds = materials.map(mat => mat.userData.materialId || null);
+    
+    // --- 2. Сбрасываем состояние подсветки ---
+    originalMaterialForHighlight = null;
+    highlightedFaceIndex = -1;
+    
+    // --- 3. Удаляем старые 3D-объекты комнаты ---
+    if (cube) scene.remove(cube);
+    if (edges) scene.remove(edges);
 
-    try {
-        if (typeof cabinets !== 'undefined' && Array.isArray(cabinets)) {
-            cabinets.forEach((cabinet, index) => {
-                if (cabinet.isDetailed && cabinet.mesh && cabinet.mesh.isGroup) {
-                    detailedCabinetData.push({ uuid: cabinet.mesh.uuid, index: index, oldMesh: cabinet.mesh });
-                    if (cabinet.mesh.parent) cabinet.mesh.parent.remove(cabinet.mesh);
+    // --- 4. Создаем новую геометрию и материалы комнаты ---
+    const geometry = new THREE.BoxGeometry(length, height, width);
+    
+    const newMaterials = [];
+    for (let i = 0; i < 6; i++) {
+        const oldId = oldMaterialIds[i];
+        let material;
+        
+        // Если для этой грани был сохранен кастомный материал, восстанавливаем его
+        if (oldId) {
+            let materialInfo;
+            // Проверяем, это "виртуальный" цвет или материал из JSON
+            if (oldId.startsWith('color_')) {
+                const colorHex = `#${oldId.split('_')[1]}`;
+                materialInfo = { id: oldId, type: 'color', value: colorHex, roughness: 0.9 };
+            } else {
+                materialInfo = window.wallMaterialsData.find(m => m.id === oldId);
+            }
+
+            // Если нашли информацию (в JSON или это цвет), создаем материал
+            if (materialInfo) {
+                if (materialInfo.type === 'texture') {
+                    const texture = new THREE.TextureLoader().load(materialInfo.value);
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    material = new THREE.MeshStandardMaterial({
+                        name: `WallMaterial_${i}_${materialInfo.id}`,
+                        map: texture,
+                        side: THREE.BackSide,
+                        color: materialInfo.baseColor || '#FFFFFF',
+                        roughness: materialInfo.roughness || 0.8
+                    });
+                    // Сразу масштабируем текстуру под новые размеры стены
+                    updateWallTextureScale(material.map, i, materialInfo);
+                } else { // color
+                    material = new THREE.MeshStandardMaterial({
+                        name: `WallMaterial_${i}_${materialInfo.id}`,
+                        color: materialInfo.value,
+                        side: THREE.BackSide,
+                        roughness: materialInfo.roughness || 0.8
+                    });
                 }
-            });
+                material.userData.materialId = oldId;
+            }
         }
-
-        if (cube) scene.remove(cube);
-        if (edges) scene.remove(edges);
-
-        const geometry = new THREE.BoxGeometry(length, height, width);
-        geometry.groups.forEach((group, index) => group.materialIndex = index);
-        materials = [
-            new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide }), new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide }),
-            new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide }), new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide }),
-            new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide }), new THREE.MeshPhongMaterial({ color: color, side: THREE.BackSide })
-        ];
-
-        newCube = new THREE.Mesh(geometry, materials);
-        // --- ИЗМЕНЕНИЕ: Вращение не устанавливается, оно всегда (0,0,0) ---
-        scene.add(newCube);
-
-        const edgesGeometry = new THREE.EdgesGeometry(geometry);
-        const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-        newEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-        scene.add(newEdges);
-
-    } catch (error) {
-        console.error("Критическая ошибка при создании куба:", error);
-        return;
+        
+        // Если материал не был создан (не было ID или не нашли в JSON),
+        // создаем материал по умолчанию на основе глобального цвета.
+        if (!material) {
+             if (i === 3) { // Индекс 3 - это Bottom
+                material = new THREE.MeshStandardMaterial({
+                    name: `FloorMaterial_Base`,
+                    color: '#808080', // Простой серый цвет для "чернового" пола
+                    side: THREE.BackSide
+                });
+            } else {
+                material = new THREE.MeshStandardMaterial({
+                    name: `WallMaterial_${i}_${color}`,
+                    color: color,
+                    side: THREE.BackSide,
+                    roughness: 0.8
+                });
+            }
+        }
+        
+        newMaterials.push(material);
     }
+    materials = newMaterials;
+    
+    const newCube = new THREE.Mesh(geometry, materials);
+    scene.add(newCube);
 
+    const edgesGeometry = new THREE.EdgesGeometry(geometry);
+    const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    const newEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+    scene.add(newEdges);
+    
+    // --- 5. Обновляем глобальные переменные и состояние ---
     cube = newCube;
     edges = newEdges;
-
     currentLength = length;
     currentWidth = height;
     currentHeight = width;
     selectedFaceIndex = -1;
-    updateSelectedFaceDisplay_RM();
-    adjustCameraAndScale(length, height, width);
-    updateFaceBounds_RM();
 
-
-    // --- ИЗМЕНЕНИЕ: Все дочерние объекты теперь добавляются в SCENE, а не в CUBE ---
-    // Это самое важное архитектурное изменение.
-
-    // Обработка ОКОН
+    // --- 6. Обновляем позиции ТОЛЬКО простых объектов (окон и т.д.) ---
+    // Вся логика для шкафов и столешниц отсюда УДАЛЕНА.
     if (typeof windows !== 'undefined' && Array.isArray(windows)) {
         windows.forEach(obj => {
             if (!obj.mesh) return;
-            scene.add(obj.mesh); // <-- ИЗМЕНЕНИЕ
-            // ... (обновление позиции окон, формулы остаются прежними, т.к. куб в (0,0,0))
-            const { width: objWidth, height: objHeight, depth: objDepth, offsetAlongWall, offsetBottom, offsetFromParentWall, wallId } = obj;
-            switch (wallId) {
-                case "Back": obj.mesh.position.set(-currentLength / 2 + offsetAlongWall + objWidth / 2, -currentWidth / 2 + offsetBottom + objHeight / 2, -currentHeight / 2 + offsetFromParentWall + objDepth / 2); obj.mesh.rotation.y = 0; break;
-                case "Left": obj.mesh.position.set(-currentLength / 2 + offsetFromParentWall + objDepth / 2, -currentWidth / 2 + offsetBottom + objHeight / 2, -currentHeight / 2 + offsetAlongWall + objWidth / 2); obj.mesh.rotation.y = THREE.MathUtils.degToRad(90); break;
-                case "Right": obj.mesh.position.set(currentLength / 2 - offsetFromParentWall - objDepth / 2, -currentWidth / 2 + offsetBottom + objHeight / 2, -currentHeight / 2 + offsetAlongWall + objWidth / 2); obj.mesh.rotation.y = THREE.MathUtils.degToRad(-90); break;
-            }
+            // Обновляем позицию на основе новых размеров комнаты
+            window.updateSimpleObjectPosition(obj); // Используем существующую функцию!
         });
     }
 
-    // Обработка НЕ детализированных шкафов
-    if (typeof cabinets !== 'undefined' && Array.isArray(cabinets)) {
-        cabinets.forEach(cabinet => {
-            if (!cabinet.isDetailed) {
-                // ... (логика создания нового меша)
-                updateCabinetMeshFromData(cabinet);
-                scene.add(cabinet.mesh); // <-- ИЗМЕНЕНИЕ
-                // ... (проверка пересечений)
-            }
-        });
-    }
-
-    // Обработка СТОЛЕШНИЦ
-    if (typeof countertops !== 'undefined' && Array.isArray(countertops)) {
-        countertops.forEach(countertop => {
-            if (!countertop) return;
-            scene.add(countertop); // <-- ИЗМЕНЕНИЕ
-            // ... (обновление позиции столешниц)
-        });
-    }
-
-    // Восстановление детализированных шкафов
-    if (typeof cabinets !== 'undefined' && Array.isArray(cabinets)) {
-        detailedCabinetData.forEach(data => {
-            const cabinet = cabinets[data.index];
-            if (cabinet && cabinet.isDetailed) {
-                const newDetailedGroup = getDetailedCabinetRepresentation(cabinet);
-                if (newDetailedGroup) {
-                    // ... (восстановление UUID и трансформаций)
-                    cabinet.mesh = newDetailedGroup;
-                    scene.add(newDetailedGroup); // <-- ИЗМЕНЕНИЕ
-                    // ... (очистка, подсветка)
-                } else {
-                    // ... (обработка ошибки, создание простого меша)
-                    scene.add(cabinet.mesh); // <-- ИЗМЕНЕНИЕ
-                }
-            }
-        });
-    }
-
-    window.requestRender();
+    // --- 7. Обновляем камеру и UI, связанные с комнатой ---
+    updateSelectedFaceDisplay_RM();
+    adjustCameraAndScale(length, height, width);
+    updateFaceBounds_RM();
+    updateRoomReference(cube);
+    // Запрос на рендер здесь больше не нужен, он будет в applySize
 }
+
+
 
 function updateFaceBounds_RM() { // Переименовали и используем activeCamera
     if (!cube || !activeCamera) return; // Добавили проверку activeCamera
@@ -550,6 +555,14 @@ export function applySize() {
     
     createCube(newLength, newHeight, newWidth, newColor);
 
+    // ==> 2. ВЫЗЫВАЕМ НОВУЮ ЦЕНТРАЛЬНУЮ ФУНКЦИЮ ОБНОВЛЕНИЯ ПОЗИЦИЙ <==
+    if (typeof window.updateAllPositionsAfterRoomResize === 'function') {
+        window.updateAllPositionsAfterRoomResize();
+    } else {
+        console.warn("Функция updateAllPositionsAfterRoomResize еще не определена!");
+    }
+
+
     window.requestRender();
 
     lengthInput.value = newLength * 1000;
@@ -558,66 +571,90 @@ export function applySize() {
     colorInput.value = newColor;
 }
 
-function updateEdgeColors_RM() { // Переименовали
-    if (!edges) return;
+// Объявите эти две переменные вверху вашего файла roomManager.js,
+// чтобы они были доступны для всей области видимости модуля.
+let originalMaterialForHighlight = null;
+let highlightedFaceIndex = -1;
 
-    // Получаем актуальный цвет комнаты из DOM-элемента
-    const baseColorValue = cubeColorInput_RM ? cubeColorInput_RM.value : '#d3d3d3'; // Значение по умолчанию, если элемент не найден
+// Теперь замените вашу старую функцию updateEdgeColors_RM на эту:
+function updateEdgeColors_RM() {
+    // --- ЧАСТЬ 1: ОБНОВЛЕНИЕ ЦВЕТА РЕБЕР (EDGES) ---
+    // Эта часть кода остается точно такой же, как у вас была,
+    // так как она отвечает за подсветку линий и работает правильно.
+    if (edges) {
+        const positions = edges.geometry.attributes.position.array;
+        const colors = new Float32Array(positions.length);
 
-    const positions = edges.geometry.attributes.position.array;
-    const colors = new Float32Array(positions.length);
+        for (let i = 0; i < positions.length; i += 6) {
+            const x1 = positions[i], y1 = positions[i + 1], z1 = positions[i + 2];
+            const x2 = positions[i + 3], y2 = positions[i + 4], z2 = positions[i + 5];
 
-    for (let i = 0; i < positions.length; i += 6) {
-        const x1 = positions[i], y1 = positions[i + 1], z1 = positions[i + 2];
-        const x2 = positions[i + 3], y2 = positions[i + 4], z2 = positions[i + 5];
+            let isSelectedEdge = false;
+            if (selectedFaceIndex !== -1 && faceNormals[selectedFaceIndex]) {
+                const face = faceNormals[selectedFaceIndex];
+                const nx = face.normal.x * currentLength / 2;
+                const ny = face.normal.y * currentWidth / 2;
+                const nz = face.normal.z * currentHeight / 2;
+                const threshold = 0.01;
 
-        let isSelectedEdge = false;
-        if (selectedFaceIndex !== -1 && faceNormals[selectedFaceIndex]) { // Добавил проверку faceNormals[selectedFaceIndex]
-            const face = faceNormals[selectedFaceIndex];
-            // ВНИМАНИЕ: currentLength, currentWidth, currentHeight используются здесь для определения "границ" куба.
-            // currentWidth соответствует высоте (Y), currentHeight - глубине (Z) в вашей терминологии комнаты.
-            const nx = face.normal.x * currentLength / 2;  // currentLength - это длина комнаты (X)
-            const ny = face.normal.y * currentWidth / 2;   // currentWidth - это ВЫСОТА комнаты (Y)
-            const nz = face.normal.z * currentHeight / 2;  // currentHeight - это ГЛУБИНА комнаты (Z)
-            
-            // Порог для определения принадлежности ребра к грани.
-            // Можно сделать его чуть менее строгим, если ребра не всегда подсвечиваются.
-            const threshold = 0.01; // Небольшой порог для сравнения координат
+                if (Math.abs(face.normal.x) > 0.5 && Math.abs(x1 - nx) < threshold && Math.abs(x2 - nx) < threshold) isSelectedEdge = true;
+                if (Math.abs(face.normal.y) > 0.5 && Math.abs(y1 - ny) < threshold && Math.abs(y2 - ny) < threshold) isSelectedEdge = true;
+                if (Math.abs(face.normal.z) > 0.5 && Math.abs(z1 - nz) < threshold && Math.abs(z2 - nz) < threshold) isSelectedEdge = true;
+            }
 
-            // Логика определения, принадлежит ли ребро выбранной грани, может быть сложной
-            // из-за вращения куба. Простая проверка по координатам может не всегда работать.
-            // Более надежный способ - проверять, лежат ли обе вершины ребра на выбранной грани.
-
-            // Упрощенная проверка (может потребовать доработки для всех вращений):
-            // Если нормаль грани по X не 0, и X-координаты ребра близки к X-координате грани
-            if (Math.abs(face.normal.x) > 0.5 && Math.abs(x1 - nx) < threshold && Math.abs(x2 - nx) < threshold) isSelectedEdge = true;
-            // Если нормаль грани по Y не 0, и Y-координаты ребра близки к Y-координате грани
-            if (Math.abs(face.normal.y) > 0.5 && Math.abs(y1 - ny) < threshold && Math.abs(y2 - ny) < threshold) isSelectedEdge = true;
-            // Если нормаль грани по Z не 0, и Z-координаты ребра близки к Z-координате грани
-            if (Math.abs(face.normal.z) > 0.5 && Math.abs(z1 - nz) < threshold && Math.abs(z2 - nz) < threshold) isSelectedEdge = true;
+            const color = isSelectedEdge ? [0, 1, 1] : [0, 0, 0]; // Cyan для выбранных, Black для остальных
+            colors[i] = color[0]; colors[i + 1] = color[1]; colors[i + 2] = color[2];
+            colors[i + 3] = color[0]; colors[i + 4] = color[1]; colors[i + 5] = color[2];
         }
 
-        const color = isSelectedEdge ? [0, 1, 1] : [0, 0, 0]; // Cyan для выбранных, Black для остальных
-        colors[i] = color[0]; colors[i + 1] = color[1]; colors[i + 2] = color[2];
-        colors[i + 3] = color[0]; colors[i + 4] = color[1]; colors[i + 5] = color[2];
+        if (!edges.geometry.attributes.color) {
+            edges.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            edges.material = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 3 });
+        } else {
+            edges.geometry.attributes.color.array.set(colors);
+            edges.geometry.attributes.color.needsUpdate = true;
+            edges.material.needsUpdate = true;
+        }
     }
 
-    if (!edges.geometry.attributes.color) {
-        edges.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        edges.material = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 3 });
+
+    // --- ЧАСТЬ 2: НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ДЛЯ МАТЕРИАЛОВ СТЕН ---
+    // Этот блок полностью заменяет ваш старый `materials.forEach(...)`.
+    //console.log(`[UPDATE_VISUALS] Запущена. selectedFaceIndex=${selectedFaceIndex}, highlightedFaceIndex=${highlightedFaceIndex}`);
+
+    // Шаг A: Сначала всегда "отменяем" предыдущую подсветку, если она была.
+    // Мы возвращаем стене ее НАСТОЯЩИЙ материал, который мы сохранили.
+    if (highlightedFaceIndex !== -1 && originalMaterialForHighlight) {
+        if (materials[highlightedFaceIndex]) materials[highlightedFaceIndex].dispose(); // Очищаем временный голубой материал
+        materials[highlightedFaceIndex] = originalMaterialForHighlight;
+        originalMaterialForHighlight = null;
+    }
+
+    // Шаг B: Теперь смотрим на ТЕКУЩЕЕ состояние selectedFaceIndex.
+    // Если какая-то стена ДОЛЖНА БЫТЬ выделена...
+    if (selectedFaceIndex !== -1 && materials[selectedFaceIndex]) {
+        //console.log(`%c[UPDATE_VISUALS] Сохраняем материал '${materials[selectedFaceIndex].name}' и подсвечиваем стену №${selectedFaceIndex}`, 'color: blue;');
+        // ...то мы подсвечиваем ее.
+        // Сохраняем ее текущий, настоящий материал (например, "Кирпич")
+        originalMaterialForHighlight = materials[selectedFaceIndex];
+        // Запоминаем, какую стену подсветили
+        highlightedFaceIndex = selectedFaceIndex;
+        
+        // И временно заменяем его на голубой
+        materials[selectedFaceIndex] = new THREE.MeshStandardMaterial({ 
+            color: 0xADD8E6,
+            side: THREE.BackSide 
+        });
     } else {
-        edges.geometry.attributes.color.array.set(colors);
-        edges.geometry.attributes.color.needsUpdate = true;
-        // edges.material.linewidth = selectedFaceIndex !== -1 ? 3 : 2; // Можно вернуть, если нужно менять толщину
-        edges.material.needsUpdate = true;
+        // Если никакая стена не должна быть выделена (selectedFaceIndex === -1),
+        // то просто сбрасываем индекс подсвеченной.
+        highlightedFaceIndex = -1;
     }
 
-    // Обновляем цвет граней (материалов куба)
-    materials.forEach((material, index) => {
-        if (material) { // Проверка, что материал существует
-             material.color.set(index === selectedFaceIndex ? 0xADD8E6 : baseColorValue); // LightBlue для выбранной грани
-        }
-    });
+    // Шаг C: Применяем итоговый массив материалов к кубу.
+    if (cube) {
+        cube.material = materials;
+    }
 }
 
 function updateSelectedFaceDisplay_RM() { // Переименовали
@@ -629,8 +666,12 @@ function updateSelectedFaceDisplay_RM() { // Переименовали
             const showWallMenu = selectedFaceIndex !== -1 && faceNormals[selectedFaceIndex] && ['Back', 'Left', 'Right'].includes(faceNormals[selectedFaceIndex].id);
             const showForBottom = selectedFaceIndex !== -1 && faceNormals[selectedFaceIndex] && faceNormals[selectedFaceIndex].id === 'Bottom';
 
+            // ==> НОВОЕ УСЛОВИЕ: Проверяем, не выделен ли объект пола <==
+            const currentSelection = window.getSelectedCabinets ? window.getSelectedCabinets() : [];
+            const isFloorObjectSelected = currentSelection.length === 1 && currentSelection[0] === window.floorObject;
+
             wallEditMenu_RM.style.display = showWallMenu ? 'block' : 'none';
-            lowerCabinetContainer_RM.style.display = (showWallMenu || showForBottom) ? 'block' : 'none';
+            lowerCabinetContainer_RM.style.display = (showWallMenu || showForBottom || isFloorObjectSelected) ? 'block' : 'none';
         }
     } else {
         // console.warn("updateSelectedFaceDisplay_RM: selectedFaceDisplayInput_RM не найден.");
@@ -639,9 +680,12 @@ function updateSelectedFaceDisplay_RM() { // Переименовали
 
 export function setRoomSelectedFace(index) {
     if (typeof index === 'number' && (index >= -1 && index < faceNormals.length)) {
+        // Просто меняем состояние
         selectedFaceIndex = index;
-        updateSelectedFaceDisplay_RM(); // Обновляем UI после изменения
-        if (typeof updateEdgeColors_RM === 'function') updateEdgeColors_RM();
+
+        // И просим UI обновиться
+        updateEdgeColors_RM();
+        updateSelectedFaceDisplay_RM();
     } else {
         console.warn("Попытка установить некорректный selectedFaceIndex:", index);
     }
@@ -650,8 +694,9 @@ export function setRoomSelectedFace(index) {
 // Для сброса
 export function resetRoomSelectedFace() {
     selectedFaceIndex = -1;
-    updateSelectedFaceDisplay_RM();
+
     updateEdgeColors_RM();
+    updateSelectedFaceDisplay_RM(); // Эта функция обновит UI меню
 }
 
 export function determineClickedWallFace_OldLogic(intersect, mouseNDC) {
@@ -700,6 +745,118 @@ export function determineClickedWallFace_OldLogic(intersect, mouseNDC) {
         }
     });
     return bestMatchIndex;
+}
+
+export function applyMaterialToWall(faceIndex, materialId) {
+    if (faceIndex < 0 || faceIndex >= materials.length) {
+        console.error("applyMaterialToWall: неверный индекс грани", faceIndex);
+        return;
+    }
+
+    let materialInfo;
+    // --- НАЧАЛО: Проверяем, является ли ID цветом ---
+    if (materialId.startsWith('color_')) {
+        const colorHex = `#${materialId.split('_')[1]}`;
+        materialInfo = {
+            id: materialId,
+            type: 'color',
+            value: colorHex,
+            roughness: 0.9 // Значение по умолчанию для краски
+        };
+    } else {
+        // Если это не цвет, ищем в JSON, как и раньше
+        materialInfo = window.wallMaterialsData.find(m => m.id === materialId);
+    }
+    // --- КОНЕЦ: Проверяем, является ли ID цветом ---
+
+    //const materialInfo = window.wallMaterialsData.find(m => m.id === materialId);
+    if (!materialInfo) {
+        console.error("applyMaterialToWall: материал не найден", materialId);
+        return;
+    }
+
+    // Удаляем старый материал, чтобы избежать утечек памяти
+    materials[faceIndex].dispose();
+
+    let newMaterial;
+    
+    // Создаем новый материал на основе данных из JSON
+    if (materialInfo.type === 'texture') {
+        const texture = new THREE.TextureLoader().load(materialInfo.value);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+
+        newMaterial = new THREE.MeshStandardMaterial({
+            map: texture,
+            side: THREE.BackSide,
+            color: materialInfo.baseColor || '#BBBBBB',
+            roughness: materialInfo.roughness || 0.8,
+            metalness: materialInfo.metalness || 0.1
+        });
+
+        // Масштабируем текстуру
+        updateWallTextureScale(newMaterial.map, faceIndex, materialInfo);
+
+    } else { // type: 'color'
+        newMaterial = new THREE.MeshStandardMaterial({
+            color: materialInfo.value,
+            side: THREE.BackSide,
+            roughness: materialInfo.roughness || 0.8,
+            metalness: materialInfo.metalness || 0.1
+        });
+    }
+
+    // Заменяем материал в массиве
+    materials[faceIndex] = newMaterial;
+    
+    // Сохраняем ID материала в самом материале для Undo/Redo
+    newMaterial.userData.materialId = materialId;
+    newMaterial.name = materialId;
+
+    // ==> ДОБАВЬТЕ ЭТОТ ЛОГ <==
+    console.log(`%c[APPLY] Применяем материал '${materialId}' к стене №${faceIndex}.`, 'color: green; font-weight: bold;');
+
+    // Заменяем материал в массиве
+    materials[faceIndex] = newMaterial;
+    originalMaterialForHighlight = null;
+    updateEdgeColors_RM();
+    // Важно! Сообщаем мешу, что его материалы нужно обновить
+    if (cube) {
+        cube.material = materials;
+        cube.material.needsUpdate = true;
+    }
+
+    dependencies.requestRender(); // Вызываем рендер через зависимость
+}
+
+// Новая вспомогательная функция для масштабирования текстуры стены
+function updateWallTextureScale(texture, faceIndex, materialInfo) {
+    const faceId = faceNormals[faceIndex].id;
+    
+    const textureWidthM = (materialInfo.textureWidthMm || 2000) / 1000;
+    const textureHeightM = (materialInfo.textureHeightMm || 2000) / 1000;
+
+    let wallWidth, wallHeight;
+
+    // Определяем ширину и высоту стены
+    switch(faceId) {
+        case 'Back':
+        case 'Front':
+            wallWidth = currentLength;
+            wallHeight = currentWidth;
+            break;
+        case 'Left':
+        case 'Right':
+            wallWidth = currentHeight;
+            wallHeight = currentWidth;
+            break;
+        default: // Top, Bottom
+            wallWidth = currentLength;
+            wallHeight = currentHeight;
+    }
+
+    texture.repeat.set(wallWidth / textureWidthM, wallHeight / textureHeightM);
+    texture.needsUpdate = true;
 }
 
 export {

@@ -1,0 +1,53 @@
+[
+  {
+    "id": "testST10",
+    "name": "тестовый материал",
+    "type": "texture",
+    "value": "textures/xl/test_XL_line.jpg",
+    "preview": "textures/previews/ЛДСП/test.jpg",
+    "baseColor": "#C0C0C0",
+    "textureLengthMm": 2800,
+    "textureWidthMm": 1300
+  },
+  {
+    "id": "H1180",
+    "name": "H1180 Дуб Галифакс",
+    "type": "texture",
+    "value": "textures/xl/H1180_XL.jpg",
+    "preview": "textures/previews/ЛДСП/H1180.jpg",
+    "baseColor": "#C0C0C0",
+    "textureLengthMm": 2800,
+    "textureWidthMm": 1300
+  },
+  {
+    "id": "H3176",
+    "name": "H3176 Дуб Галифакс Олово",
+    "type": "texture",
+    "value": "textures/xl/H3176_XL.jpg",
+    "preview": "textures/previews/ЛДСП/H3176.jpg",
+    "baseColor": "#C0C0C0",
+    "textureLengthMm": 2800,
+    "textureWidthMm": 1300
+  },
+  {
+    "id": "c0c0c0",
+    "name": "цвет c0c0c0",
+    "type": "color",
+    "value": "#C0C0C0",
+    "preview": "#C0C0C0",
+    "baseColor": "#C0C0C0",
+    "textureLengthMm": 2800,
+    "textureWidthMm": 1300
+  },
+
+  {
+    "id": "floor_tiles_grey",
+    "name": "Серая плитка",
+    "type": "texture",
+    "value": "/textures/floors/tiles_grey.jpg",
+    "preview": "/previews/floors/tiles_grey.jpg",
+    "baseColor": "#FFFFFF",
+    "textureLengthMm": 600,
+    "textureWidthMm": 600
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "wall_paint_white",
+    "name": "Белая краска",
+    "type": "color",
+    "value": "#f5f5f5",
+    "preview": "/previews/walls/white_paint.jpg",
+    "roughness": 0.9
+  },
+  {
+    "id": "wall_paint_beige",
+    "name": "Бежевая краска",
+    "type": "color",
+    "value": "#d1bba4",
+    "preview": "/previews/walls/beige_paint.jpg",
+    "roughness": 0.9
+  },
+  {
+    "id": "test",
+    "name": "Тестовый материал",
+    "type": "texture",
+    "value": "textures/xl/test_XL_line.jpg",
+    "preview": "textures/previews/ЛДСП/test.jpg",
+    "baseColor": "#AAAAAA",
+    "roughness": 0.85,
+    "textureWidthMm": 1300,
+    "textureHeightMm": 2800
+  },
+  {
+    "id": "wall_H1180",
+    "name": "H1180 Дуб Галифакс",
+    "type": "texture",
+    "value": "textures/xl/H1180_XL.jpg",
+    "preview": "textures/previews/ЛДСП/H1180.jpg",
+    "baseColor": "#AAAAAA",
+    "textureLengthMm": 2800,
+    "textureWidthMm": 1300
+  },
+  {
+    "id": "wall_concrete_light",
+    "name": "Светлый бетон",
+    "type": "texture",
+    "value": "/textures/xl/F186_XL.jpg",
+    "preview": "textures/previews/ЛДСП/F186.jpg",
+    "baseColor": "#AAAAAA",
+    "roughness": 0.7,
+    "textureWidthMm": 1300,
+    "textureHeightMm": 2800
+  }
+]

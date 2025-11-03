@@ -1,4 +1,15 @@
 // menus.js
+import { historyManager } from './HistoryManager.js';
+import { UpdateCountertopCommand } from './Commands.js';
+import { applyMaterialToWall,
+            materials
+        } from './roomManager.js'; 
+         
+import * as MaterialManager from './MaterialManager.js';
+
+import { getAdjacentWallId, findNearestNeighbor } from './CabinetUtils.js';
+
+
 window.facadeSetsData = window.facadeSetsData || [];
 
 // --- Данные для Выпадающих Списков (Заглушка) ---
@@ -28,15 +39,15 @@ export function createCabinetConfigMenu(cabinetIndex, cabinets) {
     let html = `
         <h3>Настройки шкафа</h3>
         <div class="menu-content scrollable"> 
-            <label>Цвет материала шкафа: <input type="color" id="cabinetMaterialColor" value="${materialColorValue}" data-set-prop="initialColor"></label> 
+            <button id="bodyMaterialPickerBtn" class="config-menu-button">Выбрать материал корпуса</button>
             <div id="specificConfigFields">
-                <!-- Сюда будут вставляться поля из updateSpecificConfigFields -->
+                <!-- Сюда будут вставляться поля -->
             </div>
         </div> 
         <div class="menu-buttons"> 
             <button id="toggleDetailBtn">${detailButtonText}</button> 
-            <button type="button" id="applyConfigBtnInMenu">Применить</button> <!-- Добавил type="button" и window. для onclick -->
-            <button type="button" onclick="hideCabinetConfigMenu()">Отмена</button> <!-- Добавил type="button" -->
+            <button type="button" id="applyConfigBtnInMenu">Применить</button>
+            <button type="button" onclick="hideCabinetConfigMenu()">Отмена</button>
         </div>
     `;
     return html;
@@ -183,22 +194,27 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
         `;
     }
 
+    const handleType = window.kitchenGlobalParams.handleType || 'standard';
+    // Определяем, можно ли редактировать "дельту"
+    const isCornerElementEditable = (handleType !== 'gola-profile');
+    const cornerElementDisabledAttr = isCornerElementEditable ? '' : 'disabled';
+
     // --- Остальной HTML для других полей (без изменений, как в вашем коде) ---
     if (isUpperCabinet) {
         fieldsHtml += `
         <label>Отступ от стены, мм: <input type="number" id="wallOffset" value="${Math.round((cabinet.offsetFromParentWall || 0.02) * 1000)}" min="0" data-set-prop="offsetFromParentWall"></label>`;
-        fieldsHtml += `
-            <label>Ширина, мм: <input type="number" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" min="10" data-set-prop="width"></label>
-            <label>Глубина, мм: <input type="number" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" min="100" data-set-prop="depth"></label>
-            <label>Зазор между фасадами, мм: <input type="number" id="facadeGap" value="${Math.round((cabinet.facadeGap || 0.003) * 1000)}" min="0" step="1" data-set-prop="facadeGap"></label>`;
+        //fieldsHtml += `
+        //    <label>Ширина, мм: <input type="number" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" min="10" data-set-prop="width"></label>
+        //    <label>Глубина, мм: <input type="number" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" min="100" data-set-prop="depth"></label>
+        //    <label>Зазор между фасадами, мм: <input type="number" id="facadeGap" value="${Math.round((cabinet.facadeGap || 0.003) * 1000)}" min="0" step="1" data-set-prop="facadeGap"></label>`;
         if (cabinetConfig !== 'openUpper') {
              fieldsHtml += generateFacadeSetSelectHTML(cabinet);
              fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
         }
         switch (cabinetConfig) {
             case 'swingUpper':
-                 fieldsHtml += `<label>Дверь: <select id="doorType">...</select></label>`;
-                 fieldsHtml += `<label>Полка: <select id="shelfType">...</select></label>`;
+                 fieldsHtml += `<label>Дверь: <select id="doorType" data-set-prop="doorType">...</select></label>`;
+                 fieldsHtml += `<label>Полка: <select id="shelfType" data-set-prop="shelfType">...</select></label>`;
                  fieldsHtml += `<label>Количество полок, шт: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 0}" min="0" data-set-prop="shelfCount"></label>`;
                 break;
             case 'liftUpper': /* ... */ break;
@@ -212,10 +228,35 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
     } else { // Не верхний
         if (cabinetType === 'corner') {
             if (cabinetConfig === 'sink') {
+
+                // Получаем текущее или дефолтное значение
+                // Важно: `cornerElementWidth` - это новое свойство, которое мы будем хранить в cabinet.
+                const currentCornerElementWidth = Math.round((cabinet.cornerElementWidth || 0.060) * 1000);
+
+
                 fieldsHtml += `
-                    <label>Диаметр мойки, мм: <input type="number" id="sinkDiameter" value="${Math.round((cabinet.sinkDiameter || 0.45) * 1000)}" min="100" data-set-prop="sinkDiameter"></label>
-                    <label>Тип мойки: <select id="sinkType">...</select></label>
+                    <p style="text-align: center; color: #555; margin-top:10px; font-weight:bold;">-- Настройки угловой мойки --</p>
+                    
+                    <label>Направление угла:
+                        <select id="cornerDirection" data-set-prop="cornerDirection">
+                            <!-- Опции будут добавлены через populateSelectOptions -->
+                        </select>
+                    </label>
+
+                    <label>Ширина фасада, мм:
+                        <input type="number" id="facadeWidth" min="50" step="10" data-set-prop="facadeWidth">
+                    </label>
+                    
+                    <label>Ширина углового элемента, мм:
+                        <input type="number" id="cornerElementWidth" value="${currentCornerElementWidth}" min="10" step="1" 
+                            data-set-prop="cornerElementWidth" ${cornerElementDisabledAttr}>
+                    </label>
+                    
+                    <label>Глубина соседа, мм (авто):
+                        <input type="number" id="neighborDepth" readonly class="readonly-style">
+                    </label>
                 `;
+                // Мы НЕ добавляем здесь generate...SelectHTML, так как они добавляются ниже.
             } else if (cabinetConfig === 'cornerStorage') {
                 fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
             }
@@ -384,7 +425,9 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
                     let initialFpDepthInputMm_UI = 80;
                     if (fpTypeCurrent_UI === 'decorativePanel') initialFpDepthInputMm_UI = 582;
                     else if (fpTypeCurrent_UI === 'wideLeft' || fpTypeCurrent_UI === 'wideRight') {
-                        const { thickness: facadeThicknessM } = window.getFacadeMaterialAndThickness(cabinet);
+                        const setData = window.facadeSetsData.find(set => set.id === cabinet.facadeSet);
+                        // Вызываем функцию из MaterialManager, передавая ей эти данные
+                        const { thickness: facadeThicknessM } = MaterialManager.getMaterial(setData);
                         initialFpDepthInputMm_UI = Math.round(facadeThicknessM * 1000);
                     }
                     // Для поля "Свободная высота ФП" (#fp_custom_height), значение будет равно initialCabinetHeightForFieldMm,
@@ -618,7 +661,7 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
         setTimeout(() => {
             //const configMenu = document.getElementById('cabinetConfigMenu');
             if (!configMenuElement || configMenuElement.style.display === 'none') return;
-            const currentCabinetData = window.cabinets[cabinetIndex];
+            const currentCabinetData = cabinets[cabinetIndex]; 
             if (!currentCabinetData || currentCabinetData.cabinetConfig !== 'falsePanel') return;
 
             const fpTypeSelect = configMenuElement.querySelector('#fp_type');
@@ -672,7 +715,12 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
                 if (fpDepthInput) {
                     if (selectedFPType === 'narrow') { fpDepthInput.value = 80; fpDepthInput.disabled = false; }
                     else if (selectedFPType === 'decorativePanel') { fpDepthInput.value = 582; fpDepthInput.disabled = false; }
-                    else { const { thickness: ftM } = window.getFacadeMaterialAndThickness(currentCabinetData); fpDepthInput.value = Math.round(ftM * 1000); fpDepthInput.disabled = true; }
+                    else { 
+                        const setData = window.facadeSetsData.find(set => set.id === currentCabinetData.facadeSet);
+                        const { thickness: ftM } = MaterialManager.getMaterial(setData);
+                        fpDepthInput.value = Math.round(ftM * 1000); 
+                        fpDepthInput.disabled = true; 
+                    }
                 }
                 const showWide = selectedFPType === 'wideLeft' || selectedFPType === 'wideRight';
                 if (fpDisplayWideWidthLabel) fpDisplayWideWidthLabel.style.display = showWide ? 'flex' : 'none';
@@ -694,6 +742,22 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
             if (fpHeightOptionSelect) { fpHeightOptionSelect.removeEventListener('change', fpHeightOptionSelect._listenerHeightUpdateUI); fpHeightOptionSelect._listenerHeightUpdateUI = updateFPMenuUI; fpHeightOptionSelect.addEventListener('change', updateFPMenuUI); }
             if (fpVerticalAlignSelect) { fpVerticalAlignSelect.removeEventListener('change', fpVerticalAlignSelect._listenerAlignUpdateUI); fpVerticalAlignSelect._listenerAlignUpdateUI = updateFPMenuUI; fpVerticalAlignSelect.addEventListener('change', updateFPMenuUI); }
             updateFPMenuUI();
+        }, 0);
+    }
+
+    if (cabinetConfig === 'sink') {
+        setTimeout(() => {
+             const cornerElementInput = configMenuElement.querySelector('#cornerElementWidth');
+             // Добавим "живую" логику: если меняется тип ручки, это поле должно обновляться
+            // Эта логика будет в `applyKitchenParams` (глобальное обновление)
+            
+            // Но нам нужно, чтобы при открытии меню оно имело правильное значение
+            if (!isCornerElementEditable) {
+                // Для Gola "дельта" равна толщине фасада
+                const facadeSet = window.facadeSetsData.find(set => set.id === cabinet.facadeSet);
+                const { thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+                cornerElementInput.value = Math.round(facadeThicknessM * 1000);
+            }
         }, 0);
     }
 }
@@ -1070,9 +1134,64 @@ function populateSelectOptions(cabinet) {
             }
         }
     }
+
+    // ==> НАЧАЛО ИЗМЕНЕНИЙ: ДОБАВЛЯЕМ ЛОГИКУ ДЛЯ УГЛОВОЙ МОЙКИ В КОНЕЦ ФУНКЦИИ <==
+    if (cabinet.cabinetType === 'corner' && cabinet.cabinetConfig === 'sink') {
+        
+        const directionSelect = configMenuElement.querySelector('#cornerDirection');
+        const facadeWidthInput = configMenuElement.querySelector('#facadeWidth');
+        const neighborDepthInput = configMenuElement.querySelector('#neighborDepth');
+
+        if (directionSelect && facadeWidthInput && neighborDepthInput) {
+            // --- 1. Заполняем поля начальными значениями ---
+            const currentDirection = cabinet.cornerDirection || 'left';
+            directionSelect.innerHTML = `
+                <option value="left" ${currentDirection === 'left' ? 'selected' : ''}>Левый</option>
+                <option value="right" ${currentDirection === 'right' ? 'selected' : ''}>Правый</option>
+            `;
+            
+            facadeWidthInput.value = Math.round((cabinet.facadeWidth || 0.45) * 1000);
+
+            // --- 2. Вешаем "живую" логику ---
+            const updateNeighborInfo = () => {
+                const newDirection = directionSelect.value;
+                const tempCabinet = { ...cabinet, cornerDirection: newDirection }; // Моделируем изменение
+                // Получаем ID соседней стены
+                const adjacentWallId = getAdjacentWallId(tempCabinet.wallId, tempCabinet.cornerDirection);
+                if (!adjacentWallId) {
+                    neighborDepthInput.value = 0;
+                    return;
+                }
+                const neighbor = findNearestNeighbor(tempCabinet);
+                const countertopDepth = window.getCountertopDepthForWall(adjacentWallId);
+
+                let pivotPositionM;
+                if (neighbor) {
+                    pivotPositionM = countertopDepth - (neighbor.overhang ?? 0.018);
+                } else {
+                    pivotPositionM = countertopDepth - (cabinet.overhang ?? 0.018);
+                }
+                neighborDepthInput.value = Math.round(pivotPositionM * 1000);
+            };
+
+            // Удаляем старый слушатель, чтобы избежать дублирования
+            directionSelect.removeEventListener('change', updateNeighborInfo);
+            // Вешаем новый
+            directionSelect.addEventListener('change', updateNeighborInfo);
+
+            // Вызываем один раз, чтобы заполнить поле "Глубина соседа" при открытии
+            updateNeighborInfo();
+        }
+    }
+    // ==> КОНЕЦ ИЗМЕНЕНИЙ <==
+
 }
 
-export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGlobalParams) {
+export function showCabinetConfigMenu(cabinetIndex, x, y, dependencies) {
+
+    // ==> ИЗМЕНЕНИЕ 2: "Распаковываем" зависимости в локальные переменные <==
+    const { objectManager, kitchenGlobalParams, toggleCabinetDetail } = dependencies;
+    const cabinets = objectManager.getAllCabinets(); // Получаем массив шкафов
 
     let menu = document.getElementById('cabinetConfigMenu');
     if (!menu) {
@@ -1087,7 +1206,7 @@ export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGloba
 
     // Устанавливаем начальную позицию
     menu.style.left = `${x + 30}px`;
-    menu.style.top = `${y + 80}px`;
+    menu.style.top = `${y - 150}px`;
     menu.style.display = 'flex';
 
     // Находим селекторы ТИПА и КОНФИГУРАЦИИ (они могут быть в основном меню шкафа)
@@ -1115,17 +1234,20 @@ export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGloba
         // Удаляем старый слушатель, если он мог быть (на всякий случай)
         toggleDetailButton.removeEventListener('click', toggleDetailButton._toggleDetailListener);
         
-        // Создаем новый слушатель
+        // ==> ИЗМЕНЕНИЕ 3: Переписываем слушатель <==
         toggleDetailButton._toggleDetailListener = () => {
-            if (typeof window.toggleCabinetDetail === 'function') {
-                window.toggleCabinetDetail(cabinetIndex);
-                // Обновляем текст кнопки ПОСЛЕ переключения
-                const cabinet = window.cabinets[cabinetIndex]; // Получаем актуальное состояние шкафа
-                if (cabinet) { // Проверяем, что шкаф еще существует
+            // Используем функцию, которую нам передали
+            if (typeof toggleCabinetDetail === 'function') {
+                toggleCabinetDetail(cabinetIndex);
+
+                // Получаем актуальное состояние шкафа из objectManager
+                const cabinet = objectManager.getAllCabinets()[cabinetIndex]; 
+                
+                if (cabinet) {
                      toggleDetailButton.textContent = cabinet.isDetailed ? 'Скрыть детали' : 'Показать детали';
                 }
             } else {
-                console.error("Функция window.toggleCabinetDetail не найдена!");
+                console.error("Функция toggleCabinetDetail не была передана в dependencies!");
             }
         };
         toggleDetailButton.addEventListener('click', toggleDetailButton._toggleDetailListener);
@@ -1155,6 +1277,15 @@ export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGloba
         configSelect.addEventListener('change', updateFields);
     }
 
+    // ==> НОВЫЙ БЛОК: Слушатель для кнопки выбора материала корпуса <==
+    const bodyMaterialBtn = menu.querySelector('#bodyMaterialPickerBtn');
+    if (bodyMaterialBtn) {
+        bodyMaterialBtn.onclick = () => {
+            // Передаем индекс шкафа в модалку
+            openBodyMaterialPickerModal(cabinetIndex); 
+        };
+    }
+
     // Автоматический select() при фокусе на числовые поля
     const inputs = menu.querySelectorAll('input[type="number"]');
     inputs.forEach(input => {
@@ -1166,18 +1297,27 @@ export function showCabinetConfigMenu(cabinetIndex, x, y, cabinets, kitchenGloba
         cabinetMenu.style.display = 'none';
     }
 
+
     // Обработка Enter внутри меню конфигурации
-    menu.removeEventListener('keydown', menu._handleKeyDown); // Удаляем старый
+    menu.removeEventListener('keydown', menu._handleKeyDown);
     const handleKeyDown = (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
             event.stopPropagation();
-            // Вызываем функцию применения изменений КОНФИГУРАЦИИ
-            window.applyConfigMenuSettings(cabinetIndex); // Убедись, что эта функция доступна глобально
+            
+            // Вызываем функцию применения изменений
+            if (typeof window.applyConfigMenuSettings === 'function') {
+                window.applyConfigMenuSettings(cabinetIndex);
+            }
+            
+            // ==> ИЗМЕНЕНИЕ: Добавляем вызов рендера <==
+            if (typeof window.requestRender === 'function') {
+                window.requestRender();
+            }
         }
     };
     menu.addEventListener('keydown', handleKeyDown);
-    menu._handleKeyDown = handleKeyDown; // Сохраняем ссылку
+    menu._handleKeyDown = handleKeyDown;
 
     // Корректировка позиции меню
     setTimeout(() => {
@@ -1879,6 +2019,72 @@ function openDecorPickerModal(rowIndex, setId) {
     // --- Показываем модальное окно ---
     modal.style.display = 'block';
 }
+
+function openBodyMaterialPickerModal(cabinetIndex) {
+    const loadedFacadeData = window.facadeOptionsData || {};
+    const materialInfo = loadedFacadeData['ldsp']; // <== Берем ТОЛЬКО ЛДСП
+    if (!materialInfo || !materialInfo.decors) {
+        alert("Данные для материалов корпуса (ЛДСП) не загружены!");
+        return;
+    }
+
+    let modal = document.getElementById('bodyMaterialPickerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'bodyMaterialPickerModal';
+        modal.className = 'decor-picker-modal'; // Используем те же стили
+        document.body.appendChild(modal);
+    }
+
+    let modalContentHTML = `
+        <div class="decor-picker-content">
+            <span class="decor-picker-close">×</span>
+            <div class="decor-picker-header">Выбор материала корпуса (ЛДСП)</div>
+            <div class="decor-grid">`;
+    
+    materialInfo.decors.forEach(decor => {
+        let previewElement = decor.previewImage
+            ? `<img src="${decor.previewImage}" alt="${decor.text}" class="decor-preview-img">`
+            : `<span class="color-swatch" style="background-color:${decor.displayColor || '#ccc'};"></span>`;
+        
+        modalContentHTML += `
+            <div class="decor-grid-item" data-decor-value="${decor.value}" title="${decor.text}">
+                ${previewElement}
+                <span>${decor.text}</span>
+            </div>
+        `;
+    });
+    modalContentHTML += '</div></div>';
+    modal.innerHTML = modalContentHTML;
+
+    // --- Обработчики ---
+    modal.querySelector('.decor-picker-close').onclick = () => modal.style.display = 'none';
+    modal.onclick = (event) => { if (event.target === modal) modal.style.display = 'none'; };
+
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const selectedDecorValue = item.dataset.decorValue;
+            
+            // Получаем актуальный массив шкафов
+            const cabinets = window.objectManager.getAllCabinets();
+            const cabinetToUpdate = cabinets[cabinetIndex];
+
+            if (cabinetToUpdate) {
+                // ==> ИЗМЕНЕНИЕ: Обновляем свойство у КОНКРЕТНОГО шкафа <==
+                cabinetToUpdate.bodyMaterial = selectedDecorValue;
+
+                // Перерисовываем ТОЛЬКО этот шкаф
+                window.objectManager.updateCabinetRepresentation(cabinetToUpdate);
+                window.requestRender();
+            }
+            modal.style.display = 'none';            
+        };
+    });
+
+    modal.style.display = 'block';
+}
+
+
 // --- Вспомогательная функция для обновления данных и кнопки после выбора в модальном окне ---
 // --- Обновляем updateFacadeSelection, чтобы она вызывала updateDecorColorButton ---
 function updateFacadeSelection(rowIndex, setId, newTextureValue, newColorValue) {
@@ -1935,4 +2141,577 @@ function updateDecorColorButton(rowElement) {
         ${displayContent}
         <span class="decor-select-text">${displayText}</span>
     `;
+}
+
+export function openCountertopPickerModal(countertop) {
+    if (!window.countertopOptionsData) {
+        alert("Данные для материалов столешниц не загружены!");
+        return;
+    }
+
+    let modal = document.getElementById('countertopPickerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'countertopPickerModal';
+        modal.className = 'decor-picker-modal'; // Используйте ваши стили
+        document.body.appendChild(modal);
+    }
+
+    let modalContentHTML = `<div class="decor-picker-content">
+        <div class="decor-picker-header"><span>Выбор материала</span><span class="decor-picker-close">×</span></div>
+        <div class="decor-picker-body"><div class="decor-grid">`;
+
+    window.countertopOptionsData.forEach(decor => {
+        modalContentHTML += `
+            <div class="decor-grid-item" data-id="${decor.id}" title="${decor.name}">
+                <img src="${decor.preview}" alt="${decor.name}">
+                <span>${decor.name}</span>
+            </div>`;
+    });
+
+    modalContentHTML += `</div></div></div>`;
+    modal.innerHTML = modalContentHTML;
+
+    // --- Обработчики --- 
+    modal.querySelector('.decor-picker-close').onclick = () => modal.style.display = 'none';
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const selectedMaterialId = item.dataset.id;
+            const materialInfo = window.countertopOptionsData.find(m => m.id === selectedMaterialId);
+
+            if (!materialInfo) return;
+
+            // 1. Сохраняем старое состояние
+            const oldState = { ...countertop.userData };
+
+            // 2. Создаем новое состояние
+            const newState = {
+                ...oldState,
+                materialId: selectedMaterialId
+                //countertopType: materialInfo.countertopType
+            };
+
+            // 3. Создаем и выполняем команду
+            const command = new UpdateCountertopCommand(countertop, newState, oldState);
+            historyManager.execute(command);
+            
+            modal.style.display = 'none';
+        };
+    });
+
+    modal.style.display = 'block';
+}
+
+// Функция для контекстного меню стены
+export function showWallContextMenu(x, y, faceIndex) {
+    // Сначала прячем все другие возможные меню
+    if (typeof window.hideAllContextMenus === 'function') {
+        window.hideAllContextMenus();
+    }
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu'; // Используйте тот же класс, что и для других меню
+    
+    // ==> ДОБАВЛЯЕМ ПРАВИЛЬНОЕ ПОЗИЦИОНИРОВАНИЕ <==
+    menu.style.position = 'absolute';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.style.zIndex = '1001'; // Убедитесь, что z-index выше других элементов
+    
+    const button = document.createElement('button');
+    button.textContent = 'Настроить материал';
+    button.onclick = () => {
+        openWallMaterialPicker(faceIndex);
+        if (menu.parentNode) { // Проверяем, что меню все еще в DOM
+            menu.parentNode.removeChild(menu);
+        }
+    };
+    menu.appendChild(button);
+    document.body.appendChild(menu);
+
+    // --- НАЧАЛО: Добавляем Color Picker ---
+
+    // Создаем контейнер для пикера
+    const colorPickerContainer = document.createElement('div');
+    colorPickerContainer.style.marginTop = '8px';
+    
+    const label = document.createElement('label');
+    label.textContent = 'Выбрать цвет: ';
+    label.style.fontSize = '14px';
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    
+    // Устанавливаем начальное значение, если у текущего материала есть цвет
+    const currentMaterial = materials[faceIndex]; // Предполагаем доступ к roomManager
+    if (currentMaterial && currentMaterial.isMeshStandardMaterial) {
+        colorInput.value = `#${currentMaterial.color.getHexString()}`;
+    } else {
+        colorInput.value = '#ffffff';
+    }
+
+    // Обработчик, который срабатывает при каждом изменении цвета
+    colorInput.addEventListener('input', (event) => {
+        const newColor = event.target.value;
+        
+        // Создаем "виртуальный" materialId для цвета
+        const colorMaterialId = `color_${newColor.replace('#', '')}`;
+        
+        // Вызываем нашу функцию, но вместо поиска в JSON,
+        // мы будем обрабатывать этот ID по-особому.
+        applyMaterialToWall(faceIndex, colorMaterialId);
+    });
+
+    label.appendChild(colorInput);
+    colorPickerContainer.appendChild(label);
+    menu.appendChild(colorPickerContainer);
+
+    // --- КОНЕЦ: Добавляем Color Picker ---
+    
+    // Добавим обработчик для закрытия меню по клику в стороне
+    const closeMenuHandler = (event) => {
+        if (!menu.contains(event.target)) {
+            if (menu.parentNode) {
+                menu.parentNode.removeChild(menu);
+            }
+            document.removeEventListener('click', closeMenuHandler, true);
+        }
+    };
+    // Используем `setTimeout`, чтобы этот обработчик не сработал на тот же клик, что его создал
+    setTimeout(() => document.addEventListener('click', closeMenuHandler, true), 0);
+}
+
+// Функция для модального окна выбора материала стены
+export function openWallMaterialPicker(faceIndex) {
+    // Проверяем, загружены ли данные
+    if (!window.wallMaterialsData || window.wallMaterialsData.length === 0) {
+        alert("Данные для материалов стен не загружены!");
+        return;
+    }
+
+    // Ищем или создаем модальное окно
+    let modal = document.getElementById('wallMaterialPickerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'wallMaterialPickerModal';
+        modal.className = 'decor-picker-modal'; // Используйте тот же стиль, что и у других модалок
+        document.body.appendChild(modal);
+    }
+    
+    // Генерируем HTML-содержимое
+    let modalContentHTML = `<div class="decor-picker-content">
+        <div class="decor-picker-header">
+            <span>Выбор материала для стены</span>
+            <span class="decor-picker-close">×</span>
+        </div>
+        <div class="decor-picker-body"><div class="decor-grid">`;
+
+    window.wallMaterialsData.forEach(decor => {
+        // Создаем превью: либо картинка, либо цветной квадрат
+        const previewElement = decor.type === 'texture'
+            ? `<img src="${decor.preview}" alt="${decor.name}">`
+            : `<div class="color-swatch" style="background-color: ${decor.value};"></div>`;
+        
+        modalContentHTML += `
+            <div class="decor-grid-item" data-id="${decor.id}" title="${decor.name}">
+                ${previewElement}
+                <span>${decor.name}</span>
+            </div>`;
+    });
+
+    modalContentHTML += `</div></div></div>`; // Закрываем .decor-grid, .decor-picker-body, .decor-picker-content
+    modal.innerHTML = modalContentHTML;
+    
+    // --- Вешаем обработчики ---
+    
+    // Закрытие по клику на крестик
+    modal.querySelector('.decor-picker-close').onclick = () => {
+        modal.style.display = 'none';
+    };
+    
+    // Закрытие по клику на фон
+    modal.onclick = (event) => { 
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    };
+
+    // ГЛАВНОЕ: Обработчики для каждого материала
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const selectedMaterialId = item.dataset.id;
+            
+            // Вызываем функцию из roomManager для применения материала
+            applyMaterialToWall(faceIndex, selectedMaterialId);
+            
+            // Закрываем модальное окно
+            modal.style.display = 'none';
+        };
+    });
+
+    // Показываем модальное окно
+    modal.style.display = 'block';
+}
+
+export function showFloorContextMenu(x, y) {
+    window.hideAllContextMenus();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.position = 'absolute';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    
+    // Кнопка меняет текст в зависимости от того, есть ли уже пол
+    const buttonText = window.floorObject ? 'Настроить покрытие' : 'Создать покрытие';
+    
+    const button = document.createElement('button');
+    button.textContent = buttonText;
+    button.onclick = () => {
+        showFloorSettingsMenu(x, y); // Вызываем основное меню настроек
+        menu.remove();
+    };
+    menu.appendChild(button);
+    document.body.appendChild(menu);
+    // ... добавьте логику закрытия по клику в стороне ...
+    // Добавим обработчик для закрытия меню по клику в стороне
+    const closeMenuHandler = (event) => {
+        if (!menu.contains(event.target)) {
+            if (menu.parentNode) {
+                menu.parentNode.removeChild(menu);
+            }
+            document.removeEventListener('click', closeMenuHandler, true);
+        }
+    };
+    // Используем `setTimeout`, чтобы этот обработчик не сработал на тот же клик, что его создал
+    setTimeout(() => document.addEventListener('click', closeMenuHandler, true), 0);
+}
+
+/*
+// Основное меню настроек ПОЛА
+export function showFloorSettingsMenu(x, y) {
+    // Ищем, есть ли меню, если нет - создаем
+    let menu = document.getElementById('floorSettingsMenu');
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'floorSettingsMenu';
+        menu.className = 'kitchen-params-menu'; // Используем тот же стиль
+        document.body.appendChild(menu);
+    }
+
+
+
+    menu.innerHTML = `
+        <h3>Настройки напольного покрытия</h3>
+        <label>Ширина планки (мм): <input type="number" id="plankWidth" value="${currentSettings.plankWidth}"></label>
+        <label>Длина планки (мм): <input type="number" id="plankLength" value="${currentSettings.plankLength}"></label>
+        <label>Зазор (мм): <input type="number" id="gap" value="${currentSettings.gap}"></label>
+        <label>Смещение рядов (%): <input type="number" id="offset" value="${currentSettings.offset}" min="0" max="100"></label>
+        <label>Направление: 
+            <select id="direction">
+                <option value="0" ${currentSettings.direction == 0 ? 'selected' : ''}>Вдоль длины комнаты (0°)</option>
+                <option value="90" ${currentSettings.direction == 90 ? 'selected' : ''}>Вдоль глубины комнаты (90°)</option>
+            </select>
+        </label>
+        <hr>
+        <button id="floorApplyButton">Применить</button>
+        <button id="floorCancelButton">Отмена</button>
+        <button id="floorMaterialButton">Выбрать материал</button>
+    `;
+
+    menu.style.display = 'block';
+
+    menu.style.left = `${x + 30}px`;
+    menu.style.top = `${y - 150}px`;
+    //menu.style.display = 'flex';
+
+    // Корректировка позиции меню
+    setTimeout(() => {
+        const menuWidth = menu.offsetWidth;
+        const menuHeight = menu.offsetHeight;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+
+        let left = parseFloat(menu.style.left); // Получаем текущее значение
+        let top = parseFloat(menu.style.top);
+
+        if (left + menuWidth > screenWidth) left = screenWidth - menuWidth - 5;
+        if (left < 0) left = 5;
+        // --- ИСПРАВЛЕНИЕ: Коррекция по НИЖНЕЙ границе ---
+        if (top + menuHeight > screenHeight) {
+            top = screenHeight - menuHeight - 35; // Поднимаем меню вверх
+            console.log(`[showCabinetConfigMenu] Меню скорректировано по высоте: top=${top}px`);
+        }
+        // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        if (top < 0) top = 40;
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+
+        // Фокус на первом поле ввода в меню КОНФИГУРАЦИИ
+        const firstInput = menu.querySelector('input, select');
+        if (firstInput) {
+            firstInput.focus();
+             if(firstInput.select) firstInput.select(); // select() для текстовых/числовых полей
+        }
+
+    });
+    // Добавим обработчик для закрытия меню по клику в стороне
+    const closeMenuHandler = (event) => {
+        if (!menu.contains(event.target)) {
+            if (menu.parentNode) {
+                menu.parentNode.removeChild(menu);
+            }
+            document.removeEventListener('click', closeMenuHandler, true);
+        }
+    };
+    // Используем `setTimeout`, чтобы этот обработчик не сработал на тот же клик, что его создал
+    setTimeout(() => document.addEventListener('click', closeMenuHandler, true), 0);
+    // ... код для позиционирования меню по центру экрана ...
+}*/
+
+// Основное меню настроек ПОЛА (ИНТЕРАКТИВНАЯ ВЕРСИЯ)
+
+export function showFloorSettingsMenu(x, y) {
+    let menu = document.getElementById('floorSettingsMenu');
+    if (menu) menu.remove();
+
+    // ==> ИЗМЕНЕНИЕ: Объявляем переменную здесь <==
+    let closeMenuHandler; 
+
+    const removeCloseHandler = () => {
+        document.removeEventListener('click', closeMenuHandler, true);
+    }
+
+    menu = document.createElement('div');
+    menu.id = 'floorSettingsMenu';
+    menu.className = 'kitchen-params-menu';
+    document.body.appendChild(menu);
+
+    // Сохраняем начальный объект пола. Это НАСТОЯЩИЙ пол, который сейчас в сцене.
+    const initialFloorObject = window.floorObject;
+    // Эта переменная будет хранить временный объект для предпросмотра.
+    let previewFloorObject = null;
+
+    const currentSettings = initialFloorObject?.userData.settings || {
+        plankWidth: 200, plankLength: 1200, plankHeight: 2, gap: 1, offset: 20, direction: 0,
+        materialId: null
+    };
+
+    menu.innerHTML = `
+        <h3>Настройки напольного покрытия</h3>
+        <label>Ширина планки (мм): <input type="number" id="plankWidth" value="${currentSettings.plankWidth}"></label>
+        <label>Длина планки (мм): <input type="number" id="plankLength" value="${currentSettings.plankLength}"></label>
+        <label>Толщина планки (мм): <input type="number" id="plankHeight" value="${currentSettings.plankHeight}"></label>
+        <label>Зазор (мм): <input type="number" id="gap" value="${currentSettings.gap}"></label>
+        <label>Смещение рядов (%): <input type="number" id="offset" value="${currentSettings.offset}" min="0" max="100"></label>
+        <label>Направление: 
+            <select id="direction">
+                <option value="0" ${currentSettings.direction == 0 ? 'selected' : ''}>Вдоль длины (0°)</option>
+                <option value="90" ${currentSettings.direction == 90 ? 'selected' : ''}>Вдоль глубины (90°)</option>
+            </select>
+        </label>
+        <hr>
+        <button id="floorApplyButton">Применить</button>
+        <button id="floorCancelButton">Отмена</button>
+        <button id="floorMaterialButton">Выбрать материал</button>
+        <button id="floorDeleteButton" style="background-color: #E57373; color: white; margin-top: 5px;" ${!initialFloorObject ? 'disabled' : ''}>Удалить</button>
+    `;
+
+    menu.dataset.selectedMaterialId = currentSettings.materialId; // Сохраняем начальный materialId
+
+    const updatePreview = () => {
+        const params = {
+            plankHeight: parseFloat(document.getElementById('plankHeight').value) || 2,
+            plankWidth: parseFloat(document.getElementById('plankWidth').value) || 200,
+            plankLength: parseFloat(document.getElementById('plankLength').value) || 1200,
+            gap: parseFloat(document.getElementById('gap').value) || 0,
+            offset: parseFloat(document.getElementById('offset').value) || 0,
+            direction: parseInt(document.getElementById('direction').value) || 0
+        };
+
+        if (params.plankWidth <= 0 || params.plankLength <= 0) return;
+        
+        if (previewFloorObject && previewFloorObject.parent) {
+            previewFloorObject.parent.remove(previewFloorObject);
+            // TODO: очистка геометрии/материала
+        }
+
+        const materialId = menu.dataset.selectedMaterialId;
+        previewFloorObject = window.floorGenerator(params, true, materialId);
+        
+        if (previewFloorObject) {
+            window.scene.add(previewFloorObject);
+        }
+        window.requestRender();
+    };
+
+    // --- Управление видимостью и позиционированием (ВАШ КОД) ---
+    menu.style.display = 'block';
+    menu.style.position = 'absolute';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    setTimeout(() => {
+        const menuWidth = menu.offsetWidth;
+        const menuHeight = menu.offsetHeight;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+
+        let left = x - menuWidth / 2;
+        let top = y - menuHeight / 2;
+
+        if (left + menuWidth > screenWidth) left = screenWidth - menuWidth - 5;
+        if (left < 5) left = 5;
+        if (top + menuHeight > screenHeight) top = screenHeight - menuHeight - 5;
+        if (top < 5) top = 5;
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+
+        const firstInput = menu.querySelector('input, select');
+        if (firstInput) {
+            firstInput.focus();
+            if(firstInput.select) firstInput.select();
+        }
+    });
+
+    
+
+
+    // --- ОБРАБОТЧИКИ КНОПОК И ПОЛЕЙ ---
+    if (initialFloorObject) {
+        initialFloorObject.visible = false;
+    }
+
+    const inputs = menu.querySelectorAll('input, select');
+    inputs.forEach(input => input.addEventListener('input', updatePreview));
+
+    menu.querySelector('#floorCancelButton').onclick = () => {
+        if (previewFloorObject && previewFloorObject.parent) {
+            previewFloorObject.parent.remove(previewFloorObject);
+        }
+        if (initialFloorObject) {
+            initialFloorObject.visible = true;
+        }
+        menu.remove();
+        removeCloseHandler();
+        window.requestRender();
+    };
+
+    menu.querySelector('#floorApplyButton').onclick = () => {
+        if (initialFloorObject && initialFloorObject.parent) {
+            initialFloorObject.parent.remove(initialFloorObject);
+        }
+
+        const finalParams = {
+                plankHeight: parseFloat(document.getElementById('plankHeight').value),
+                plankWidth: parseFloat(document.getElementById('plankWidth').value),
+                plankLength: parseFloat(document.getElementById('plankLength').value),
+                gap: parseFloat(document.getElementById('gap').value),
+                offset: parseFloat(document.getElementById('offset').value),
+                direction: parseInt(document.getElementById('direction').value)
+            };
+        const finalMaterialId = menu.dataset.selectedMaterialId;
+
+        const newFloor = window.floorGenerator(finalParams, false, finalMaterialId);
+        if (newFloor) {
+            window.scene.add(newFloor);
+            window.setFloorObject(newFloor);
+            window.floorObject.userData = { settings: { ...finalParams, materialId: finalMaterialId } };
+        } else {
+            // Если генерация не удалась, сбрасываем объект
+            window.setFloorObject(null);
+        }
+        if (previewFloorObject && previewFloorObject.parent) {
+            previewFloorObject.parent.remove(previewFloorObject);
+        }       
+        
+        previewFloorObject = null;
+        menu.remove();
+        removeCloseHandler();
+        window.requestRender();
+    };
+
+    // ==> ИЗМЕНЕНИЕ: Передаем функцию удаления в обработчик кнопки <==
+    menu.querySelector('#floorMaterialButton').onclick = () => {
+        openFloorMaterialPicker((selectedMaterialId) => {
+            menu.dataset.selectedMaterialId = selectedMaterialId;
+        }, removeCloseHandler); // Передаем функцию удаления
+    };
+
+    // ==> НОВЫЙ ОБРАБОТЧИК КНОПКИ "УДАЛИТЬ" <==
+    const deleteButton = menu.querySelector('#floorDeleteButton');
+    if (deleteButton) {
+        deleteButton.onclick = () => {
+            if (window.floorObject && window.floorObject.parent) {
+                window.floorObject.parent.remove(window.floorObject);
+                // TODO: очистка геометрии/материала
+            }
+            window.setFloorObject(null);
+            
+            // Удаляем и объект превью на всякий случай
+            if (previewFloorObject && previewFloorObject.parent) {
+                previewFloorObject.parent.remove(previewFloorObject);
+            }
+
+            menu.remove();
+            window.requestRender();
+        };
+    }
+    
+    updatePreview();
+}
+
+export function openFloorMaterialPicker(onMaterialSelectCallback, onOpenCallback) {
+    if (!window.floorMaterialsData || window.floorMaterialsData.length === 0) {
+        alert("Материалы для пола не загружены!");
+        return;
+    }
+
+    if (onOpenCallback) {
+        onOpenCallback(); // Это удалит слушатель `closeMenuHandler` из родительского меню
+    }
+
+    let modal = document.getElementById('floorMaterialPickerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'floorMaterialPickerModal';
+        modal.className = 'decor-picker-modal';
+        document.body.appendChild(modal);
+    }
+    
+    // Генерация HTML (аналогично другим пикерам)
+   let modalContentHTML = `<div class="decor-picker-content">
+        <div class="decor-picker-header"><span>Выбор материала</span><span class="decor-picker-close">×</span></div>
+        <div class="decor-picker-body"><div class="decor-grid">`;
+
+    window.floorMaterialsData.forEach(decor => {
+        modalContentHTML += `
+            <div class="decor-grid-item" data-id="${decor.id}" title="${decor.name}">
+                <img src="${decor.preview}" alt="${decor.name}">
+                <span>${decor.name}</span>
+            </div>`;
+    });
+    modalContentHTML += `</div></div></div>`;
+    modal.innerHTML = modalContentHTML;
+    
+    // Обработчики
+    modal.querySelector('.decor-picker-close').onclick = () => modal.style.display = 'none';
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const selectedMaterialId = item.dataset.id;
+            // Вызываем callback и передаем ему ID
+            if (onMaterialSelectCallback) {
+                onMaterialSelectCallback(selectedMaterialId);
+            }
+            modal.style.display = 'none';
+        };
+    });
+
+    modal.style.display = 'block';
 }

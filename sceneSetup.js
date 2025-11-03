@@ -45,12 +45,12 @@ directionalLight.shadow.camera.top = shadowCamSize;
 directionalLight.shadow.camera.bottom = -shadowCamSize;
 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.4;
+renderer.toneMappingExposure = 0.4;
 
 const rgbeLoader = new RGBELoader();
 rgbeLoader.setDataType(THREE.HalfFloatType);
 
-rgbeLoader.load('./assets/hdri/FreeHDR_1730_Sunset01_ligth.hdr', (texture) => {
+rgbeLoader.load('./assets/hdri/small_empty_room_1_1k.hdr', (texture) => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = texture;
     console.log("HDRI окружение загружено и установлено.");
