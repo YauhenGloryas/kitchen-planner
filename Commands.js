@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import * as MaterialManager from './MaterialManager.js';
 import { roomDimensions } from './roomManager.js';
+import { buildApronGeometry } from './ApronBuilder.js';
+import { createPlinth } from './PlinthFactory.js';
 
 // Команда для добавления шкафа
 export class AddCabinetCommand {
@@ -544,15 +546,53 @@ export class UpdateCountertopCommand {
         this.oldState = { ...oldState };
     }
 
+    _apply(state, prevState) {
+        // Вызываем центральную функцию обновления, как и раньше
+        window.updateCountertop3D(this.target, state, prevState);
+
+        // --- НОВЫЙ БЛОК: Обновляем зависимые шкафы ---
+        const wallId = state.wallId;
+        if (wallId && wallId !== 'Bottom') {
+            window.objectManager.getAllCabinets().forEach(cab => {
+                if (cab.type === 'lowerCabinet' && cab.wallId === wallId) {
+                    // Пересчитываем отступ (он сам возьмет новую глубину через getCountertopDepthForWall)
+                    cab.offsetFromParentWall = window.calculateLowerCabinetOffset(cab);
+                    // Обновляем 3D-позицию шкафа
+                    window.updateCabinetPosition(cab);
+                }
+            });
+        }
+    }
+
     execute() {
-        // Вызываем центральную функцию обновления, передавая ей целевое состояние и предыдущее
-        // `oldState` нужен функции `updateCountertop3D` для корректного расчета сдвигов
+        this._apply(this.newState, this.oldState);
+    }
+
+    undo() {
+        this._apply(this.oldState, this.newState);
+    }
+}
+
+/**
+ * Команда для обновления состояния И ПОЗИЦИИ столешницы.
+ */
+export class UpdateCountertopCommandWithPos {
+    constructor(target, newState, oldState, newPosition) {
+        this.target = target;
+        this.newState = { ...newState };
+        this.oldState = { ...oldState };
+        this.newPosition = newPosition.clone();
+        this.oldPosition = target.position.clone();
+    }
+
+    execute() {
+        this.target.position.copy(this.newPosition);
+        // Вызываем центральную функцию, она сделает все остальное
         window.updateCountertop3D(this.target, this.newState, this.oldState);
     }
 
     undo() {
-        // Для отмены мы применяем старое состояние, а в качестве "предыдущего" передаем новое.
-        // Это позволяет `updateCountertop3D` корректно рассчитать сдвиги в обратную сторону.
+        this.target.position.copy(this.oldPosition);
         window.updateCountertop3D(this.target, this.oldState, this.newState);
     }
 }
@@ -668,4 +708,438 @@ export class UpdateGlobalParamsCommand {
     undo() {
         this._applyState(this.oldGlobalParams);
     }
+}
+
+/**
+ * Команда для добавления техники на столешницу.
+ */
+export class AddApplianceCommand {
+    constructor(countertop, applianceData) {
+        this.countertop = countertop;
+        this.applianceData = { ...applianceData };
+        this.applianceId = applianceData.id;
+        this.createdAppliance = null; // Можно хранить для оптимизации, но осторожно
+    }
+
+    execute() {
+        // Всегда ищем, есть ли уже такой объект (на случай повторных нажатий)
+        const existing = this.countertop.children.find(c => c.userData && c.userData.id === this.applianceId);
+        if (existing) return; // Уже есть
+
+        if (window.createCountertopApplianceFromData) {
+            // Создаем новый
+            const mesh = window.createCountertopApplianceFromData(this.countertop, this.applianceData);
+            if (mesh) {
+                this.countertop.userData.appliances.push(mesh.userData);
+                this.createdAppliance = mesh;
+            }
+        }
+        window.updateCountertop3D(this.countertop, this.countertop.userData);
+    }
+
+    undo() {
+        // Ищем по ID и удаляем
+        const target = this.countertop.children.find(c => c.userData && c.userData.id === this.applianceId);
+        if (target) {
+            // --- НОВОЕ: Снимаем выделение перед удалением ---
+            if (window.selectedCabinets && window.selectedCabinets.includes(target)) {
+                window.clearSelection(); // Или selectedCabinets = [];
+                // Также полезно скрыть меню, если оно открыто
+                if (window.hideAllDimensionInputs) window.hideAllDimensionInputs();
+                const menu = document.getElementById('applianceMenu');
+                if (menu) menu.remove();
+            }
+            // ------------------------------------------------
+            
+            this.countertop.remove(target);
+            const index = this.countertop.userData.appliances.findIndex(a => a.id === this.applianceId);
+            if (index > -1) this.countertop.userData.appliances.splice(index, 1);
+        }
+        window.updateCountertop3D(this.countertop, this.countertop.userData);
+    }
+}
+
+/**
+ * Команда для удаления техники.
+ */
+export class RemoveApplianceCommand {
+    constructor(countertop, appliance) {
+        this.countertop = countertop;
+        this.applianceId = appliance.userData.id; // Храним ID
+        this.applianceData = { ...appliance.userData }; // Копия данных для восстановления
+        
+        // Для undo нам нужно будет создать объект заново.
+        // Мы не можем просто вернуть "старый" меш, если он был удален и очищен.
+        // Поэтому мы будем использовать createCountertopApplianceFromData.
+    }
+
+    execute() {
+        // Ищем актуальный меш по ID
+        const target = this.countertop.children.find(c => c.userData && c.userData.id === this.applianceId);
+        if (target) {
+            this.countertop.remove(target);
+            // Очистка ресурсов
+            target.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else if (child.material) {
+                        child.material.dispose();
+                    }
+                }
+            });
+            // Удаляем из userData
+            const index = this.countertop.userData.appliances.findIndex(a => a.id === this.applianceId);
+            if (index > -1) this.countertop.userData.appliances.splice(index, 1);
+        }
+        window.updateCountertop3D(this.countertop, this.countertop.userData);
+    }
+
+    undo() {
+        // Восстанавливаем
+        if (window.createCountertopApplianceFromData) {
+            const newMesh = window.createCountertopApplianceFromData(this.countertop, this.applianceData);
+            if (newMesh) {
+                // Добавляем в массив данных
+                this.countertop.userData.appliances.push(newMesh.userData);
+            }
+        }
+        window.updateCountertop3D(this.countertop, this.countertop.userData);
+    }
+}
+
+/**
+ * Команда для изменения свойств техники (замена модели).
+ */
+export class UpdateApplianceCommand {
+    constructor(appliance, newData, oldData) {
+        // Мы храним не ссылку на меш, а ID и ссылку на родителя (столешницу),
+        // чтобы найти актуальный меш.
+        this.parentCountertop = appliance.parent;
+        this.applianceId = appliance.userData.id;
+        
+        this.newData = newData;
+        this.oldData = oldData;
+    }
+    
+    _findAppliance() {
+        if (!this.parentCountertop) return null;
+        // Ищем среди детей столешницы объект с нужным ID
+        return this.parentCountertop.children.find(child => 
+            child.userData && child.userData.id === this.applianceId
+        );
+    }
+
+    _apply(data) {
+        const currentApplianceMesh = this._findAppliance();
+        if (!currentApplianceMesh) {
+            console.error("UpdateApplianceCommand: Не найден объект техники для обновления!");
+            return;
+        }
+
+        if (window.replaceApplianceModel) {
+            // replaceApplianceModel заменит меш в сцене и вернет новый.
+            // ID в userData останется тем же, так что в следующий раз мы снова его найдем.
+            const newMesh = window.replaceApplianceModel(currentApplianceMesh, data.modelName);
+            
+            if (newMesh) {
+                // Обновляем остальные данные
+                Object.assign(newMesh.userData, data);
+                // Также обновляем данные в массиве родителя, чтобы при сохранении было актуально
+                const appIndex = this.parentCountertop.userData.appliances.findIndex(a => a.id === this.applianceId);
+                if (appIndex > -1) {
+                    Object.assign(this.parentCountertop.userData.appliances[appIndex], data);
+                }
+            }
+        }
+    }
+
+    execute() {
+        this._apply(this.newData);
+        if (this.parentCountertop && this.parentCountertop.userData) {
+            window.updateCountertop3D(this.parentCountertop, this.parentCountertop.userData);
+        }
+    }
+
+    undo() {
+        this._apply(this.oldData);
+        if (this.parentCountertop && this.parentCountertop.userData) {
+            window.updateCountertop3D(this.parentCountertop, this.parentCountertop.userData);
+        }
+    }
+}
+
+export class UpdateAppliancePosCommand {
+    constructor(appliance, newPos, oldPos, newDist, oldDist) {
+        this.appliance = appliance;
+        this.parentCountertop = appliance.parent; // <-- СОХРАНЯЕМ ССЫЛКУ
+        this.newPos = newPos.clone();
+        this.oldPos = oldPos.clone();
+        this.newDist = newDist;
+        this.oldDist = oldDist;
+    }
+
+    execute() {
+        this.appliance.position.copy(this.newPos);
+        this.appliance.userData.distFromLeft = this.newDist;
+
+        console.log("UpdatePos Parent UUID:", this.parentCountertop.uuid, "In Scene:", this.parentCountertop.parent ? "Yes" : "No");
+
+        // --- ВОТ ЭТОГО НЕ ХВАТАЕТ! ---
+        if (this.parentCountertop && this.parentCountertop.userData && this.parentCountertop.userData.appliances) {
+             const appData = this.parentCountertop.userData.appliances.find(a => a.id === this.appliance.userData.id);
+             if (appData) {
+                 // Обновляем данные в массиве, который пойдет в сохранение
+                 if (appData.localPosition && typeof appData.localPosition.copy === 'function') {
+                     appData.localPosition.copy(this.newPos);
+                 } else {
+                     appData.localPosition = { x: this.newPos.x, y: this.newPos.y, z: this.newPos.z };
+                 }
+                 appData.distFromLeft = this.newDist;
+                 console.log("Массив данных обновлен для сохранения.");
+             } else {
+                 console.error("Ошибка: объект не найден в массиве данных родителя!");
+             }
+        }
+        // -----------------------------
+        
+        // Обновляем вырез в столешнице!
+        if (this.parentCountertop && this.parentCountertop.userData) {
+             window.updateCountertop3D(this.parentCountertop, this.parentCountertop.userData);
+        }
+        
+        // Обновляем размеры и инпуты
+        if (window.selectedCabinets && window.selectedCabinets.includes(this.appliance)) {
+             if (typeof window.showApplianceDimensions === 'function') {
+                 window.showApplianceDimensions(this.appliance);
+             }
+        }
+        if (typeof window.requestRender === 'function') window.requestRender();
+    }
+
+    undo() {
+        this.appliance.position.copy(this.oldPos);
+        this.appliance.userData.distFromLeft = this.oldDist;
+        
+        // Обновляем вырез (возвращаем назад)
+        if (this.parentCountertop && this.parentCountertop.userData) {
+             window.updateCountertop3D(this.parentCountertop, this.parentCountertop.userData);
+        }
+
+         if (window.selectedCabinets && window.selectedCabinets.includes(this.appliance)) {
+             if (typeof window.showApplianceDimensions === 'function') {
+                 window.showApplianceDimensions(this.appliance);
+             }
+        }
+        if (typeof window.requestRender === 'function') window.requestRender();
+    }
+}
+
+/**
+ * Команда для обновления Фартука (Switch between Panel and Tiles).
+ */
+export class UpdateApronCommand {
+    constructor(target, newState, oldState) {
+        this.target = target;
+        this.newState = JSON.parse(JSON.stringify(newState));
+        this.oldState = JSON.parse(JSON.stringify(oldState));
+    }
+
+    _applyState(state) {
+        // 1. Применяем данные
+        Object.assign(this.target, state);
+
+        // 2. Очистка старого меша
+        if (this.target.mesh) {
+            if (this.target.mesh.parent) {
+                this.target.mesh.parent.remove(this.target.mesh);
+            }
+            // Рекурсивная очистка памяти
+            this.target.mesh.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    // Материалы не удаляем, они кэшируются
+                }
+            });
+        }
+
+        // 3. Создаем новый объект (Группу с плитками и hitBox-ом)
+        // Подготовка параметров (добавляем layoutDirection)
+        const buildParams = {
+            width: state.width,
+            height: state.height,
+            depth: state.depth,
+            apronType: state.apronType || 'panel',
+            materialData: state.materialData,
+            tileParams: {
+                width: state.tileWidth || 200,
+                height: state.tileHeight || 100,
+                gap: state.tileGap !== undefined ? state.tileGap : 3,
+                rowOffset: state.tileRowOffset || 0,
+                layoutDirection: state.tileLayoutDirection || 'horizontal' // <== НОВЫЙ ПАРАМЕТР
+            },
+            textureOrientation: state.textureOrientation || 'horizontal'
+        };
+
+        const newMeshGroup = buildApronGeometry(buildParams);
+        
+        // ВАЖНО: Присваиваем обратно ссылку на userData.obj (если у тебя такая связь используется)
+        newMeshGroup.userData = { ...state, isApron: true }; 
+        // Если твоя система выделения полагается на uuid или id в userData:
+        newMeshGroup.userData.id = this.target.id || this.target.userData?.id; 
+
+        this.target.mesh = newMeshGroup;
+
+        // 4. Создаем рамку выделения (Edges)
+        // Ищем hitBox внутри группы (мы его там создали в Builder)
+        const hitBox = newMeshGroup.userData.hitBox;
+        
+        if (hitBox) {
+            const edgesGeometry = new THREE.EdgesGeometry(hitBox.geometry);
+            const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+            const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+            
+            // Edges тоже добавляем в группу, но позиционируем так же, как hitBox (он в 0,0,0 группы)
+            newMeshGroup.add(edges);
+            this.target.edges = edges; // Обновляем ссылку в объекте данных
+        }
+
+        // 5. Позиционируем
+        if (window.updateSimpleObjectPosition) {
+            window.updateSimpleObjectPosition(this.target);
+        }
+
+        // 6. Добавляем на сцену
+        if (window.scene) {
+            window.scene.add(newMeshGroup);
+            // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ МАТРИЦ
+            newMeshGroup.updateMatrixWorld(true);
+        }
+
+        // 7. Восстанавливаем выделение (Хак для фикса "потери фокуса")
+        // Если этот объект был выделен, обновляем ссылку в selectedCabinets
+        if (window.selectedCabinets && window.selectedCabinets.length > 0) {
+            // Если мы редактировали текущий выделенный объект
+            if (window.selectedCabinets && window.selectedCabinets.includes(this.target)) {
+                if (window.applyHighlight) {
+                    window.applyHighlight(newMeshGroup);
+                }
+            }
+        }
+    }
+
+    execute() {
+        this._applyState(this.newState);
+        if (typeof window.requestRender === 'function') window.requestRender();
+    }
+
+    undo() {
+        this._applyState(this.oldState);
+        if (typeof window.requestRender === 'function') window.requestRender();
+    }
+}
+
+export class AddPlinthCommand {
+    constructor(scene, plinthsArray, cabinets) {
+        this.scene = scene;
+        this.plinthsArray = plinthsArray; // Ссылка на window.plinths
+        
+        // Сохраняем ID шкафов, чтобы при загрузке найти их заново
+        this.cabinetIds = cabinets.map(c => c.id_data);
+        
+        this.createdPlinth = null; // Здесь будет объект { mesh, cabinetIds, id, materialData }
+    }
+
+    execute() {
+        if (!this.createdPlinth) {
+            // Первый запуск: создаем геометрию
+            // Находим актуальные объекты шкафов по ID (на случай undo/redo шкафов)
+            const currentCabinets = window.objectManager.getAllCabinets().filter(c => this.cabinetIds.includes(c.id_data));
+            
+            if (currentCabinets.length === 0) return; // Шкафы удалены?
+
+            const meshGroup = createPlinth(currentCabinets);
+            if (!meshGroup) return;
+
+            // Генерируем уникальный ID для цоколя
+            const plinthId = 'plinth_' + Math.random().toString(36).substr(2, 9);
+            
+            // Создаем объект данных
+            this.createdPlinth = {
+                id: plinthId,
+                type: 'plinth',
+                cabinetIds: this.cabinetIds,
+                materialData: null, // Пока дефолт
+                mesh: meshGroup
+            };
+            
+            // Привязываем данные к мешу
+            meshGroup.userData = this.createdPlinth;
+        } else {
+            // Redo: восстанавливаем меш на сцену
+            if (!this.createdPlinth.mesh) {
+                 // Если меш был удален из памяти, пересоздаем
+                 const currentCabinets = window.objectManager.getAllCabinets().filter(c => this.cabinetIds.includes(c.id_data));
+                 this.createdPlinth.mesh = createPlinth(currentCabinets);
+                 this.createdPlinth.mesh.userData = this.createdPlinth;
+                 // Восстанавливаем материал, если был
+                 // ... (позже добавим)
+            }
+        }
+
+        this.plinthsArray.push(this.createdPlinth);
+        this.scene.add(this.createdPlinth.mesh);
+    }
+
+    undo() {
+        if (this.createdPlinth) {
+            const index = this.plinthsArray.indexOf(this.createdPlinth);
+            if (index > -1) {
+                this.plinthsArray.splice(index, 1);
+            }
+            if (this.createdPlinth.mesh) {
+                this.scene.remove(this.createdPlinth.mesh);
+            }
+        }
+    }
+}
+
+export class UpdatePlinthCommand {
+    constructor(target, newState, oldState) {
+        this.target = target; // Объект из window.plinths
+        this.newState = newState;
+        this.oldState = oldState;
+    }
+
+    _apply(state) {
+        Object.assign(this.target, state);
+        
+        // Удаляем старый меш со сцены
+        if (this.target.mesh) {
+            window.scene.remove(this.target.mesh);
+            // dispose...
+        }
+        
+        // Создаем новый с учетом нового материала
+        // Нам нужно найти шкафы заново, так как createPlinth требует шкафы
+        const cabinets = window.objectManager.getAllCabinets().filter(c => this.target.cabinetIds.includes(c.id_data));
+        console.log("Command Apply: Material Data:", state.materialData); // <--- ЛОГ 2
+        const newMeshGroup = createPlinth(cabinets, state.materialData); // Передаем материал!
+        
+        this.target.mesh = newMeshGroup;
+        newMeshGroup.userData = this.target;
+        
+        window.scene.add(newMeshGroup);
+        
+        // Восстанавливаем выделение
+        if (window.selectedCabinets && window.selectedCabinets.includes(this.target)) {
+            if (window.applyHighlight) {
+                window.applyHighlight(newMeshGroup);
+            }
+        }
+    }
+
+    execute() { this._apply(this.newState); }
+    undo() { this._apply(this.oldState); }
 }

@@ -29,8 +29,8 @@ controls.enabled = false; // Выключим их по умолчанию, вк
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
 scene.add(ambientLight);
-const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 0.9);
-directionalLight.position.set(-2, 8, 5);
+const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1.9);
+directionalLight.position.set(-6, 2, 0);
 scene.add(directionalLight);
 
 directionalLight.castShadow = true;
@@ -43,6 +43,8 @@ directionalLight.shadow.camera.left = -shadowCamSize;
 directionalLight.shadow.camera.right = shadowCamSize;
 directionalLight.shadow.camera.top = shadowCamSize;
 directionalLight.shadow.camera.bottom = -shadowCamSize;
+directionalLight.shadow.bias = -0.001; // Или -0.0001, нужно подбирать
+directionalLight.shadow.normalBias = 0.02; // Очень помогает для скругленных объектов
 
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.4;

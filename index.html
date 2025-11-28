@@ -59,9 +59,21 @@
             <button class="draggable-object-button" data-type="door">Дверь</button>
             <button class="draggable-object-button" data-type="apron">Фартук</button>
         </div>
+        <!-- Контейнер для НИЖНИХ шкафов (виден для Стен и Пола) -->
         <div id="lowerCabinetContainer" style="display: none;">
             <button class="lower-cabinet draggable-object-button" draggable="true" data-type="lowerCabinet">Нижний шкаф</button>
+        </div>
+
+        <!-- Контейнер для ВЕРХНИХ шкафов (виден ТОЛЬКО для Стен) -->
+        <div id="upperCabinetContainer" style="display: none;">
             <button class="upper-cabinet draggable-object-button" draggable="true" data-type="upperCabinet">Верхний шкаф</button>
+        </div>
+
+        <!-- НОВЫЙ контейнер для СТОЛЕШНИЦ (виден только при выделении столешницы) -->
+        <div id="countertopToolbar" style="display: none;">
+            <h3>Техника и Мойки</h3>
+            <button class="draggable-object-button" draggable="true" data-type="hob">Варочная панель</button>
+            <button class="draggable-object-button" draggable="true" data-type="sink_model">Мойка</button>
         </div>
     </div>
     <div id="canvasContainer">

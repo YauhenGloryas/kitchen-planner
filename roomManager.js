@@ -144,7 +144,7 @@ function setupOrthoCameraViewRM(viewType) {
     orthoCamera.updateProjectionMatrix();
 
     if (typeof updateFaceBounds_RM === 'function') updateFaceBounds_RM();
-    if (typeof updateEdgeColors_RM === 'function') updateEdgeColors_RM();
+    //if (typeof updateEdgeColors_RM === 'function') updateEdgeColors_RM();
 }
 
 function forceCameraReset(cameraInstance) {
@@ -317,7 +317,7 @@ export function createCube(length, height, width, color) {
     
     // --- 3. Удаляем старые 3D-объекты комнаты ---
     if (cube) scene.remove(cube);
-    if (edges) scene.remove(edges);
+    //if (edges) scene.remove(edges);
 
     // --- 4. Создаем новую геометрию и материалы комнаты ---
     const geometry = new THREE.BoxGeometry(length, height, width);
@@ -391,14 +391,14 @@ export function createCube(length, height, width, color) {
     const newCube = new THREE.Mesh(geometry, materials);
     scene.add(newCube);
 
-    const edgesGeometry = new THREE.EdgesGeometry(geometry);
-    const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-    const newEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-    scene.add(newEdges);
+    // const edgesGeometry = new THREE.EdgesGeometry(geometry);
+    // const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    // const newEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+    //scene.add(newEdges);
     
     // --- 5. Обновляем глобальные переменные и состояние ---
     cube = newCube;
-    edges = newEdges;
+    //edges = newEdges;
     currentLength = length;
     currentWidth = height;
     currentHeight = width;
@@ -699,6 +699,14 @@ export function resetRoomSelectedFace() {
     updateSelectedFaceDisplay_RM(); // Эта функция обновит UI меню
 }
 
+/**
+ * Возвращает индекс текущей выделенной грани.
+ * @returns {number} Индекс грани или -1.
+ */
+export function getRoomSelectedFaceIndex() {
+    return selectedFaceIndex;
+}
+
 export function determineClickedWallFace_OldLogic(intersect, mouseNDC) {
     if (!cube || !activeCamera || !intersect || !intersect.face || !mouseNDC) return -1;
 
@@ -819,7 +827,7 @@ export function applyMaterialToWall(faceIndex, materialId) {
     // Заменяем материал в массиве
     materials[faceIndex] = newMaterial;
     originalMaterialForHighlight = null;
-    updateEdgeColors_RM();
+    //updateEdgeColors_RM();
     // Важно! Сообщаем мешу, что его материалы нужно обновить
     if (cube) {
         cube.material = materials;

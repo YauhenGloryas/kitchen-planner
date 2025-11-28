@@ -85,28 +85,49 @@ export function getDraggedCabinetType() { return _draggedObjectType; }
 function _createPhantomObject(type) {
     if (_phantomObject) _scene.remove(_phantomObject);
 
-    if (!_dependencies.objectTypes) {
-        console.error("   - ОШИБКА: _dependencies.objectTypes не определен!");
-        return;
-    }
+    // --- НОВАЯ ЛОГИКА ДЛЯ ТЕХНИКИ ---
+    if (type === 'hob') {
+        // Призрак варочной панели
+        const width = 0.595; // 595мм
+        const depth = 0.520; // 520мм
+        const thickness = 0.006; // 6мм
+        const geometry = new THREE.BoxGeometry(width, thickness, depth);
+        const material = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0.5, transparent: true });
+        _phantomObject = new THREE.Mesh(geometry, material);
+        
+        // Смещаем геометрию, чтобы pivot был снизу по центру (как у реальной модели)
+        geometry.translate(0, thickness / 2, 0);
+        
+    } else if (type === 'sink_model') {
+        // Призрак мойки (пока просто коробка)
+        const width = 0.550; // Примерная ширина
+        const depth = 0.500; 
+        const thickness = 0.200; // Глубина чаши
+        const geometry = new THREE.BoxGeometry(width, thickness, depth);
+        const material = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, opacity: 0.5, transparent: true });
+        _phantomObject = new THREE.Mesh(geometry, material);
+        // Смещаем так, чтобы верх был на уровне стола
+        geometry.translate(0, -thickness / 2, 0);
 
-    const params = _dependencies.objectTypes[type] || {};
-    const width = params.defaultWidth || 0.6;
-    let height = params.defaultHeight || 0.8;
-    if (type === 'column') {
-        height = roomDimensions.getWidth();
-    }
-    const depth = params.defaultDepth || 0.1;
+    } else {
+        // --- СТАРАЯ ЛОГИКА ДЛЯ ШКАФОВ И СТЕН ---
+        if (!_dependencies.objectTypes) {
+            console.error("   - ОШИБКА: _dependencies.objectTypes не определен!");
+            return;
+        }
+        const params = _dependencies.objectTypes[type] || {};
+        const width = params.defaultWidth || 0.6;
+        let height = params.defaultHeight || 0.8;
+        if (type === 'column') height = roomDimensions.getWidth(); // или getHeight, проверьте вашу логику
+        const depth = params.defaultDepth || 0.1;
 
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.5, transparent: true });
-    _phantomObject = new THREE.Mesh(geometry, material);
-    _phantomObject.visible = false; // Изначально невидимый
+        const geometry = new THREE.BoxGeometry(width, height, depth);
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.5, transparent: true });
+        _phantomObject = new THREE.Mesh(geometry, material);
+    }
     
-    if (!_scene) {
-        console.error("   - ОШИБКА: _scene не определена в InputManager!");
-        return;
-    }
+    _phantomObject.visible = false;
+    if (!_scene) { console.error("   - ОШИБКА: _scene не определена!"); return; }
     _scene.add(_phantomObject);
 }
 
@@ -125,60 +146,92 @@ function _onDragMouseMove(event) {
     _raycaster.setFromCamera(_mouse, _camera);
     
     // ВАЖНО: Мы все еще пересекаем _cube, который теперь всегда актуален
-    const targets = [_cube];
-    if (window.floorObject) {
-        targets.push(window.floorObject);
+    let targets = [];
+    if (['hob', 'sink_model'].includes(_draggedObjectType)) {
+        // Если тащим технику, цель - только столешницы!
+        // Нам нужно получить массив мешей столешниц. 
+        // Предположим, что они доступны через _dependencies.countertops
+        // или window.countertops (если нет другого выхода)
+        if (window.countertops) targets = window.countertops;
+    } else {
+        // Если тащим шкафы - стены и пол
+        targets = [_cube];
+        if (window.floorObject) targets.push(window.floorObject);
     }
+
     const intersects = _raycaster.intersectObjects(targets, false);
 
     if (intersects.length > 0) {
         _phantomObject.visible = true;
         const intersect = intersects[0];
-        
-        // --- 3. Позиционирование "призрака" (логика из вашей старой addObjectAtPoint) ---
-        const pointOnSurface = intersect.point;
-        const faceIdx = _dependencies.determineClickedWallFace_OldLogic(intersect, _mouse);
-        const wallId = (faceIdx !== -1) ? _dependencies.faceNormals[faceIdx].id : null;
 
-        if (!wallId) {
-            _phantomObject.visible = false;
-            return;
-        }
+        if (['hob', 'sink_model'].includes(_draggedObjectType)) {
+            // --- ЛОГИКА ДЛЯ ТЕХНИКИ ---
+            const countertop = intersect.object;
+            const point = intersect.point;
 
-        const phantomParams = _phantomObject.geometry.parameters;
-        let objWidth = phantomParams.width;
-        let objHeight = phantomParams.height;
-        let objDepth = phantomParams.depth;
-        
-        // Для FREESTANDING объектов (на полу), нам нужно учесть вращение
-        if (wallId === 'Bottom' && _draggedObjectType === 'freestandingCabinet') {
-            // Здесь можно добавить логику определения вращения призрака
-            // Например, на основе того, к какой стене ближе курсор.
-            // Пока оставим вращение по умолчанию.
+            // Привязываем к позиции курсора, но фиксируем Y и Z
+            _phantomObject.position.copy(point);
+            
+            // Коррекция высоты: ставим НА столешницу
+            // Точка пересечения уже лежит на поверхности, если мы кликаем сверху.
+            // Но для надежности можно взять Y верха столешницы.
+            
+            // Ориентация: поворачиваем так же, как столешницу
+            _phantomObject.rotation.copy(countertop.rotation);
+            // Если столешница была повернута для экструзии (x=-90), это может сбить с толку.
+            // Проще всего: сбросить вращение призрака и повернуть только по Y, как у шкафа под ним.
+            
+            // Упрощенная логика: просто следуем за курсором по поверхности
+            _phantomObject.position.y = point.y + 0.001; // Чуть выше поверхности
+             
+             // Для моек, которые врезаются, позиция Y будет другой, но пока так.
+
         } else {
-             _phantomObject.rotation.y = 0;
-             if (wallId === 'Left') _phantomObject.rotation.y = THREE.MathUtils.degToRad(90);
-             else if (wallId === 'Right') _phantomObject.rotation.y = THREE.MathUtils.degToRad(-90);
+            // --- 3. Позиционирование "призрака" (логика из вашей старой addObjectAtPoint) ---
+            const pointOnSurface = intersect.point;
+            const faceIdx = _dependencies.determineClickedWallFace_OldLogic(intersect, _mouse);
+            const wallId = (faceIdx !== -1) ? _dependencies.faceNormals[faceIdx].id : null;
+
+            if (!wallId) {
+                _phantomObject.visible = false;
+                return;
+            }
+
+            const phantomParams = _phantomObject.geometry.parameters;
+            let objWidth = phantomParams.width;
+            let objHeight = phantomParams.height;
+            let objDepth = phantomParams.depth;
+            
+            // Для FREESTANDING объектов (на полу), нам нужно учесть вращение
+            if (wallId === 'Bottom' && _draggedObjectType === 'freestandingCabinet') {
+                // Здесь можно добавить логику определения вращения призрака
+                // Например, на основе того, к какой стене ближе курсор.
+                // Пока оставим вращение по умолчанию.
+            } else {
+                _phantomObject.rotation.y = 0;
+                if (wallId === 'Left') _phantomObject.rotation.y = THREE.MathUtils.degToRad(90);
+                else if (wallId === 'Right') _phantomObject.rotation.y = THREE.MathUtils.degToRad(-90);
+            }
+
+            // Клонируем точку пересечения, чтобы не изменять оригинал
+            let finalPos = pointOnSurface.clone();
+
+            // Ограничиваем позицию границами комнаты/стены
+            finalPos.x = Math.max(-roomLength / 2 + objWidth / 2, Math.min(roomLength / 2 - objWidth / 2, finalPos.x));
+            finalPos.y = Math.max(-roomWidth / 2 + objHeight / 2, Math.min(roomWidth / 2 - objHeight / 2, finalPos.y));
+            finalPos.z = Math.max(-roomHeight / 2 + objDepth / 2, Math.min(roomHeight / 2 - objDepth / 2, finalPos.z));
+
+            // "Приклеиваем" к стене
+            const offset = objDepth / 2;
+            if (wallId === 'Back') finalPos.z = -roomHeight / 2 + offset;
+            else if (wallId === 'Front') finalPos.z = roomHeight / 2 - offset;
+            else if (wallId === 'Left') finalPos.x = -roomLength / 2 + offset;
+            else if (wallId === 'Right') finalPos.x = roomLength / 2 - offset;
+            else if (wallId === 'Bottom') finalPos.y = -roomWidth / 2 + objHeight / 2;
+
+            _phantomObject.position.copy(finalPos);
         }
-
-        // Клонируем точку пересечения, чтобы не изменять оригинал
-        let finalPos = pointOnSurface.clone();
-
-        // Ограничиваем позицию границами комнаты/стены
-        finalPos.x = Math.max(-roomLength / 2 + objWidth / 2, Math.min(roomLength / 2 - objWidth / 2, finalPos.x));
-        finalPos.y = Math.max(-roomWidth / 2 + objHeight / 2, Math.min(roomWidth / 2 - objHeight / 2, finalPos.y));
-        finalPos.z = Math.max(-roomHeight / 2 + objDepth / 2, Math.min(roomHeight / 2 - objDepth / 2, finalPos.z));
-
-        // "Приклеиваем" к стене
-        const offset = objDepth / 2;
-        if (wallId === 'Back') finalPos.z = -roomHeight / 2 + offset;
-        else if (wallId === 'Front') finalPos.z = roomHeight / 2 - offset;
-        else if (wallId === 'Left') finalPos.x = -roomLength / 2 + offset;
-        else if (wallId === 'Right') finalPos.x = roomLength / 2 - offset;
-        else if (wallId === 'Bottom') finalPos.y = -roomWidth / 2 + objHeight / 2;
-
-        _phantomObject.position.copy(finalPos);
-
     } else {
         _phantomObject.visible = false;
     }
@@ -204,50 +257,65 @@ function _onDragMouseUp(event) {
     const rect = _renderer.domElement.getBoundingClientRect();
     const ndcMouse = new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     _raycaster.setFromCamera(ndcMouse, _camera);
-    const targets = [_cube];
-    if (window.floorObject) {
-        targets.push(window.floorObject);
+
+    let targets = [];
+    if (['hob', 'sink_model'].includes(_draggedObjectType)) {
+        targets = window.countertops || [];
+    } else {
+        targets = [_cube];
+        if (window.floorObject) targets.push(window.floorObject);
     }
+
     const intersects = _raycaster.intersectObjects(targets, false);
 
     if (intersects.length > 0) {
         const intersect = intersects[0];
-        // Стена, над которой ФАКТИЧЕСКИ отпустили мышь
-        const finalFaceIdx = _dependencies.determineClickedWallFace_OldLogic(intersect, ndcMouse);
-        
-        if (finalFaceIdx !== -1) {
-            const finalWallId = _dependencies.faceNormals[finalFaceIdx].id;
-            let canPlace = false; // Флаг, разрешено ли размещение
+        if (['hob', 'sink_model'].includes(_draggedObjectType)) {
+            // --- СОЗДАНИЕ ТЕХНИКИ ---
+            const targetCountertop = intersect.object;
+            // Вызываем колбэк, который создаст объект
+            // Передаем тип, точку вставки и саму столешницу
+            if (_dependencies.callbacks.onApplianceCreate) {
+                _dependencies.callbacks.onApplianceCreate(_draggedObjectType, intersect.point, targetCountertop);
+            }
+        } else {
+            // Стена, над которой ФАКТИЧЕСКИ отпустили мышь
+            const finalFaceIdx = _dependencies.determineClickedWallFace_OldLogic(intersect, ndcMouse);
+            
+            if (finalFaceIdx !== -1) {
+                const finalWallId = _dependencies.faceNormals[finalFaceIdx].id;
+                let canPlace = false; // Флаг, разрешено ли размещение
 
-            // ==> ГЛАВНОЕ ИЗМЕНЕНИЕ: ЛОГИКА РАЗРЕШЕНИЯ <==
-            if (_dragInitialFaceIndex !== -1) {
-                // Если мы НАЧАЛИ с выделенной стены...
-                const initialWallId = _dependencies.faceNormals[_dragInitialFaceIndex].id;
-                const isInitialVertical = ['Back', 'Left', 'Right'].includes(initialWallId);
-                const isFinalVertical = ['Back', 'Left', 'Right'].includes(finalWallId);
-                
-                if (isInitialVertical && isFinalVertical) {
-                    // Начали с вертикальной и закончили на вертикальной -> РАЗРЕШЕНО
-                    canPlace = true;
-                } else if (!isInitialVertical && !isFinalVertical) {
-                    // Начали с НЕ-вертикальной (пол) и закончили на НЕ-вертикальной -> РАЗРЕШЕНО
+                // ==> ГЛАВНОЕ ИЗМЕНЕНИЕ: ЛОГИКА РАЗРЕШЕНИЯ <==
+                if (_dragInitialFaceIndex !== -1) {
+                    // Если мы НАЧАЛИ с выделенной стены...
+                    const initialWallId = _dependencies.faceNormals[_dragInitialFaceIndex].id;
+                    const isInitialVertical = ['Back', 'Left', 'Right'].includes(initialWallId);
+                    const isFinalVertical = ['Back', 'Left', 'Right'].includes(finalWallId);
+                    
+                    if (isInitialVertical && isFinalVertical) {
+                        // Начали с вертикальной и закончили на вертикальной -> РАЗРЕШЕНО
+                        canPlace = true;
+                    } else if (!isInitialVertical && !isFinalVertical) {
+                        // Начали с НЕ-вертикальной (пол) и закончили на НЕ-вертикальной -> РАЗРЕШЕНО
+                        canPlace = true;
+                    }
+                } else {
+                    // Если мы начали БЕЗ выделенной стены, разрешаем ставить куда угодно
+                    // (актуально для шкафов, которые можно ставить и на пол, и на стену)
                     canPlace = true;
                 }
-            } else {
-                // Если мы начали БЕЗ выделенной стены, разрешаем ставить куда угодно
-                // (актуально для шкафов, которые можно ставить и на пол, и на стену)
-                canPlace = true;
+                
+                if (canPlace) {
+                    // Если размещение разрешено, используем стену под курсором
+                    _dependencies.setRoomSelectedFace(finalFaceIdx);
+                    _dependencies.callbacks.onObjectCreate(_draggedObjectType, intersect.point, finalWallId);
+                } else {
+                    // Размещение запрещено (например, тянули со стены на пол)
+                    console.log("Размещение отменено: смена типа поверхности (стена -> пол или наоборот).");
+                }
             }
-            
-            if (canPlace) {
-                // Если размещение разрешено, используем стену под курсором
-                _dependencies.setRoomSelectedFace(finalFaceIdx);
-                _dependencies.callbacks.onObjectCreate(_draggedObjectType, intersect.point, finalWallId);
-            } else {
-                // Размещение запрещено (например, тянули со стены на пол)
-                console.log("Размещение отменено: смена типа поверхности (стена -> пол или наоборот).");
-            }
-        }
+        } 
     }
     _draggedObjectType = null;
     _dragInitialFaceIndex = -1; // Сбрасываем
@@ -256,27 +324,30 @@ function _onDragMouseUp(event) {
 function _onDragMouseDown(event) {
     const button = event.currentTarget;
     const objectType = button.dataset.type;
+    
 
     // Запоминаем выделенную стену В МОМЕНТ НАЧАЛА <==
      _dragInitialFaceIndex = _dependencies.getSelectedFaceIndex();
 
-    // Не начинаем drag, если это не шкаф и ни одна стена не выбрана
-    //if (_dragInitialFaceIndex === -1 && !objectType.includes('cabinet')) {
-    //    return;
-    //}
-
      // --- НОВАЯ, БОЛЕЕ ЧЕТКАЯ ЛОГИКА ---
-    // Определяем, можно ли этот объект ставить на пол
-    const canPlaceOnFloor = ['freestandingCabinet'].includes(objectType); // Добавьте сюда другие типы, если нужно
+    // 1. Определяем типы, которые можно ставить на пол
+    const canPlaceOnFloor = ['freestandingCabinet'].includes(objectType);
 
-    // Если стена НЕ выбрана (_dragInitialFaceIndex === -1)...
+    // 2. Определяем типы техники для столешницы
+    const isAppliance = ['hob', 'sink_model'].includes(objectType);
+
+    const isLowerCabinet = objectType === 'lowerCabinet';
+
     if (_dragInitialFaceIndex === -1) {
-        // ...и мы НЕ тащим объект, который можно ставить на пол...
-        if (!canPlaceOnFloor) {
-            // ... ТОГДА запрещаем drag.
-            // Это нужно для окон, розеток и т.д., которые можно ставить только на стены.
-            console.log(`Drag-n-drop отменен: объект '${objectType}' можно размещать только на выделенной стене.`);
-            return;
+        // Если стена не выбрана, разрешаем ТОЛЬКО freestanding И технику
+        if (!canPlaceOnFloor && !isAppliance) { // <-- Добавили проверку
+            // Если это нижний шкаф и выделен пол - разрешаем
+            if (isLowerCabinet && _dependencies.isFloorSelected()) {
+                // Разрешаем! (ничего не делаем, код пойдет дальше)
+            } else {
+                console.log(`Drag-n-drop отменен...`);
+                return;
+            }
         }
     }
 

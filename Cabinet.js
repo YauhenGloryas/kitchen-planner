@@ -76,7 +76,7 @@ const otherDefaults = {
     freezerFacadeHeightMm: 760,
     topFacade2HeightMm: 0,
     ovenColor: 'metallic',
-    cornerElementWidth: 60 / 1000
+    cornerElementWidth: 18 / 1000
 };
 
 

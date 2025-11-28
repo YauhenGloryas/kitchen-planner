@@ -290,37 +290,11 @@ button {
     font-size: 12px;
 }
 
-/* Стили для всплывающих меню */
-#windowMenu, #socketMenu, #cabinetMenu {
-    position: absolute;
-    background-color: #fff;
-    border: 1px solid #000;
-    padding: 10px;
-    z-index: 1000;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-    font-family: Arial, sans-serif;
-}
+/* ================================================================ */
+/* === НОВЫЙ УНИФИЦИРОВАННЫЙ БЛОК ДЛЯ ВСЕХ МЕНЮ ШКАФОВ =========== */
+/* ================================================================ */
 
-#windowMenu h3, #socketMenu h3, #cabinetMenu h3 {
-    margin: 0 0 10px 0;
-    font-size: 14px;
-}
-
-#windowMenu div, #cabinetMenu div {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-#socketMenu div  {
-    display: flex;
-    flex-direction: row;
-    gap: 10px;
-}
-
-
-
-/* Стили для ВСЕХ всплывающих меню (основное и конфигурации) */
+/* Общий стиль для ВСЕХ всплывающих меню (основного и конфигурации) */
 .popup-menu {
     position: absolute;
     background-color: #fff;
@@ -328,61 +302,53 @@ button {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     padding: 15px;
     z-index: 1000;
-    width: 400px;
+    width: 320px; /* Единая ширина для всех меню */
     font-family: Arial, sans-serif;
     box-sizing: border-box;
-
-    display: flex; /* УСТАНАВЛИВАЕМ FLEX ЗДЕСЬ ДЛЯ ВИДИМОГО СОСТОЯНИЯ */
+    
+    /* Главная магия: Flexbox-контейнер */
+    display: flex;
     flex-direction: column;
-    max-height: calc(100vh - 44px - 80px);
-
-    /* По умолчанию меню будет скрыто через JS или другим классом,
-       но когда оно видимо, оно должно быть flex-контейнером.
-       Если хотите, чтобы CSS скрывал по умолчанию, то:
-       display: none;
-       И в JS при показе menu.style.display = 'flex';
-    */
+    max-height: calc(100vh - 80px); /* Макс. высота = высота экрана минус отступы */
 }
 
 .popup-menu h3 {
-    margin: 0 0 12px; /* Немного увеличим отступ снизу */
+    margin: 0 0 12px;
     font-size: 16px;
     text-align: center;
     color: #333;
-    flex-shrink: 0; /* Заголовок не должен сжиматься по высоте */
+    flex-shrink: 0; /* Заголовок не сжимается */
     border-bottom: 1px solid #eee;
     padding-bottom: 12px;
 }
 
-/* Контейнер для ОСНОВНОГО содержимого меню (полей) */
-/* Удаляем класс .scrollable из HTML, если он не нужен для других целей,
-   и применяем стили непосредственно к .menu-content */
-   .popup-menu .menu-content { /* Более специфичный селектор, если есть другие .menu-content */
+/* Контейнер для полей ввода, который будет скроллиться */
+.popup-menu .menu-content {
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Отступ между label/полями */
-
-    flex-grow: 1; /* Позволяет этому блоку растягиваться и занимать доступное место */
-    overflow-y: auto; /* Включаем вертикальный скролл ТОЛЬКО для этого блока, если контент не помещается */
+    gap: 2px;
     
-    padding-bottom: 15px; /* Отступ снизу перед блоком кнопок */
-    padding-right: 5px;   /* Небольшой отступ справа для полосы прокрутки, если она появится */
-    /* min-height: 0; */ /* Иногда помогает flex-элементам правильно сжиматься, если есть проблемы с overflow */
+    flex-grow: 1; /* Растягивается, занимая все доступное место */
+    overflow-y: auto; /* Включает скролл, если контент не помещается */
+    
+    padding-bottom: 15px;
+    padding-right: 5px;   /* Место для скроллбара */
+    min-height: 0; /* Важный хак для правильной работы flex + overflow */
 }
 
 /* Стили для полей внутри .menu-content */
-.popup-menu .menu-content label {
+.popup-menu label {
     display: flex;
     flex-direction: column;
     font-size: 13px;
-    color: #444; /* Чуть темнее для лучшей читаемости */
+    color: #444;
 }
 
-.popup-menu .menu-content input[type="number"],
-.popup-menu .menu-content input[type="text"],
-.popup-menu .menu-content select {
+.popup-menu input[type="number"],
+.popup-menu input[type="text"],
+.popup-menu select {
     width: 100%;
-    padding: 7px 9px; /* Чуть больше padding для удобства */
+    padding: 7px 9px;
     margin-top: 4px;
     box-sizing: border-box;
     border: 1px solid #ccc;
@@ -390,32 +356,24 @@ button {
     font-size: 13px;
 }
 
-.popup-menu .menu-content input[type="color"] {
-    width: 100%; /* Растянем на всю ширину для единообразия */
-    max-width: 70px; /* Но ограничим максимальную ширину */
-    height: 30px; /* Выровняем высоту с другими инпутами */
-    padding: 2px; /* Небольшой внутренний отступ */
-    margin-top: 4px;
-}
-
-.popup-menu .menu-content input:disabled,
-.popup-menu .menu-content input.readonly-style[readonly], /* Добавил .readonly-style для кастомных readonly */
-.popup-menu .menu-content select:disabled {
-    background-color: #f0f0f0; /* Светлее фон для неактивных */
-    color: #888; /* Светлее текст */
+.popup-menu input:disabled,
+.popup-menu input.readonly-style[readonly],
+.popup-menu select:disabled {
+    background-color: #f0f0f0;
+    color: #888;
     cursor: not-allowed;
 }
 
-/* Блок кнопок внизу (теперь прямой потомок .popup-menu) */
+/* Блок кнопок, прижатый к низу */
 .popup-menu .menu-buttons {
     display: flex;
-    justify-content: space-between; /* Кнопки по краям */
-    gap: 10px; /* Отступ между кнопками */
+    justify-content: space-between; /* Распределяет кнопки по ширине */
+    gap: 10px;
     
-    padding-top: 15px; /* Отступ сверху от границы */
+    padding-top: 15px;
     border-top: 1px solid #eee;
-    margin-top: auto;   /* Прижимает блок кнопок к низу flex-контейнера .popup-menu */
-    flex-shrink: 0;   /* Блок кнопок не должен сжиматься по высоте */
+    margin-top: auto;   /* Прижимает блок к низу */
+    flex-shrink: 0;   /* Блок кнопок не сжимается */
 }
 
 .popup-menu .menu-buttons button {
@@ -425,22 +383,38 @@ button {
     border-radius: 4px;
     cursor: pointer;
     color: white;
-    flex-grow: 1; /* Кнопки будут стараться занять равное пространство */
+    flex-grow: 1; /* Кнопки занимают равное пространство */
     text-align: center;
-    min-width: 90px; /* Минимальная ширина, чтобы текст помещался */
 }
 
+/* --- Стилизация кнопок по их ID, а не по ID меню --- */
+/* Это делает стили универсальными */
 
-/* Цвета кнопок (оставляем ваши работающие nth-child для .popup-menu) */
-/* Если это меню конфигурации (ID) */
-#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* toggleDetailBtn - Голубой */
-#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Применить - Зеленый */
-#cabinetConfigMenu.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Отмена - Красный */
+.popup-menu button#configureCabinetBtn,
+.popup-menu button#toggleDetailBtn,
+.popup-menu button#plinthCancelBtn {
+    background-color: #5bc0de; /* Голубой */
+}
 
-/* Если это основное меню шкафа (ID) */
-#cabinetMenu.popup-menu .menu-buttons button:nth-child(1) { background-color: #5bc0de; } /* Настроить - Голубой */
-#cabinetMenu.popup-menu .menu-buttons button:nth-child(2) { background-color: #28a745; } /* Применить - Зеленый */
-#cabinetMenu.popup-menu .menu-buttons button:nth-child(3) { background-color: #dc3545; } /* Удалить - Красный */
+.popup-menu button#applyMainCabinetChangesBtn,
+.popup-menu button#applyConfigBtnInMenu,
+.popup-menu button#plinthApplyBtn {
+    background-color: #28a745; /* Зеленый */
+}
+
+.popup-menu button#deleteCabinetBtn,
+.popup-menu button#plinthDeleteBtn{
+    background-color: #dc3545; /* Красный */
+}
+
+/* Кнопка "Отмена" - общая для всех */
+.popup-menu button[onclick*="hideCabinet"] { /* Ищет все кнопки, у которых в onclick есть "hideCabinet" */
+    background-color: #6c757d; /* Серый */
+}
+
+/* ================================================================ */
+/* === КОНЕЦ УНИФИЦИРОВАННОГО БЛОКА =============================== */
+/* ================================================================ */
 
 
 /* Стили для контейнера меню параметров кухни */
@@ -530,7 +504,7 @@ button {
     user-select: none;       /* Запрещаем выделение текста */
 }
 
-#countertop-button {
+#countertop-button, #plinth-button {
     display: none;
     width: 100%;
     padding: 10px;
@@ -541,7 +515,7 @@ button {
     cursor: pointer;
     font-size: 14px;
 }
-#countertop-button:hover {
+#countertop-button:hover, #plinth-button:hover {
     background-color: #45a049;
 }
 
@@ -1000,4 +974,31 @@ button {
      cursor: pointer;
      border: 1px solid #ccc;
      padding: 0;
+}
+
+
+
+
+
+
+#upperCabinetContainer {
+    margin-top: 5px;
+}
+
+#countertopToolbar {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ccc;
+}
+
+#countertopToolbar button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin-bottom: 5px;
+    background-color: #e8f5e9; /* Легкий зеленый оттенок для отличия */
+}
+
+#countertopToolbar button:hover {
+    background-color: #c8e6c9;
 }

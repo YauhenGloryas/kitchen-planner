@@ -7,7 +7,7 @@ import { applyMaterialToWall,
          
 import * as MaterialManager from './MaterialManager.js';
 
-import { getAdjacentWallId, findNearestNeighbor } from './CabinetUtils.js';
+import { getAdjacentWallId, findNearestNeighbor, calculateCornerPivotPosition } from './CabinetUtils.js';
 
 
 window.facadeSetsData = window.facadeSetsData || [];
@@ -165,8 +165,8 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
 
     const cabinetHeightFieldDisabledAttr = isCabinetHeightFieldEditable ? '' : ' disabled';
     const offsetBottomFieldDisabledAttr = isOffsetBottomFieldEditable ? '' : ' disabled'; // Для нового поля
-    let fieldsHtml = `
-        <label>Высота шкафа, мм: <input type="number" id="cabinetHeight" value="${initialCabinetHeightForFieldMm}" min="50"${cabinetHeightFieldDisabledAttr} data-set-prop="height"></label>`;
+    let fieldsHtml = ``;
+    
 
     if (isTallCabinet) {
         const isHeightIndependentChecked = cabinet.isHeightIndependent || false;
@@ -178,21 +178,14 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
         `;
     }
 
-    // Чекбокс и поле "Отступ от пола" для ОБЫЧНЫХ ВЕРХНИХ шкафов
-    if (isUpperCabinet && cabinet.isMezzanine === 'normal') {
-        const isHeightIndependentChecked = cabinet.isHeightIndependent || false;
-        fieldsHtml += `
-            <label style="flex-direction: row; align-items: center;">
-                <input type="checkbox" id="isHeightIndependentCheckboxUpper" ${isHeightIndependentChecked ? 'checked' : ''} style="width: auto; margin-right: 8px;">
-                Свободная высота/положение
-            </label>
-            <label>Отступ от пола, мм: <input type="number" id="cabinetOffsetBottomUpper" value="${initialOffsetBottomForFieldMm}" min="0"${offsetBottomFieldDisabledAttr} data-set-prop="offsetBottom"></label>
-        `;
-    } else if (isUpperCabinet) { // Для антресолей/подантресолей показываем нередактируемый отступ
-        fieldsHtml += `
-            <label>Отступ от пола, мм: <input type="number" id="cabinetOffsetBottomUpper" value="${initialOffsetBottomForFieldMm}" min="0" disabled data-set-prop="offsetBottom"></label>
-        `;
-    }
+    // // Чекбокс и поле "Отступ от пола" для ОБЫЧНЫХ ВЕРХНИХ шкафов
+    // if (isUpperCabinet && cabinet.isMezzanine === 'normal') {
+    //     // all in showCabinetMenu
+    // } else if (isUpperCabinet) { // Для антресолей/подантресолей показываем нередактируемый отступ
+    //     fieldsHtml += `
+    //         <label>Отступ от пола, мм: <input type="number" id="cabinetOffsetBottomUpper" value="${initialOffsetBottomForFieldMm}" min="0" disabled data-set-prop="offsetBottom"></label>
+    //     `;
+    // }
 
     const handleType = window.kitchenGlobalParams.handleType || 'standard';
     // Определяем, можно ли редактировать "дельту"
@@ -201,29 +194,187 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
 
     // --- Остальной HTML для других полей (без изменений, как в вашем коде) ---
     if (isUpperCabinet) {
-        fieldsHtml += `
-        <label>Отступ от стены, мм: <input type="number" id="wallOffset" value="${Math.round((cabinet.offsetFromParentWall || 0.02) * 1000)}" min="0" data-set-prop="offsetFromParentWall"></label>`;
+        //fieldsHtml += `
+        //<label>Отступ от стены, мм: <input type="number" id="wallOffset" value="${Math.round((cabinet.offsetFromParentWall || 0.02) * 1000)}" min="0" data-set-prop="offsetFromParentWall"></label>`;
         //fieldsHtml += `
         //    <label>Ширина, мм: <input type="number" id="cabinetWidth" value="${Math.round(cabinet.width * 1000)}" min="10" data-set-prop="width"></label>
         //    <label>Глубина, мм: <input type="number" id="cabinetDepth" value="${Math.round(cabinet.depth * 1000)}" min="100" data-set-prop="depth"></label>
         //    <label>Зазор между фасадами, мм: <input type="number" id="facadeGap" value="${Math.round((cabinet.facadeGap || 0.003) * 1000)}" min="0" step="1" data-set-prop="facadeGap"></label>`;
-        if (cabinetConfig !== 'openUpper') {
-             fieldsHtml += generateFacadeSetSelectHTML(cabinet);
-             fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
-        }
+        // if (cabinetConfig !== 'openUpper') {
+        //      fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+        //      fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
+        // }
         switch (cabinetConfig) {
             case 'swingUpper':
-                 fieldsHtml += `<label>Дверь: <select id="doorType" data-set-prop="doorType">...</select></label>`;
-                 fieldsHtml += `<label>Полка: <select id="shelfType" data-set-prop="shelfType">...</select></label>`;
-                 fieldsHtml += `<label>Количество полок, шт: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 0}" min="0" data-set-prop="shelfCount"></label>`;
+                fieldsHtml += `
+                    <label>Тип дна: <select id="bottomType" data-set-prop="bottomType"></select></label>
+                    <label>Конструкция дна: <select id="bottomConstruction" data-set-prop="bottomConstruction"></select></label>
+                    <label>Отступ дна спереди, мм: <input type="number" id="bottomFrontOffset" data-set-prop="bottomFrontOffset"></label>
+                    <label>Выступ дна сзади, мм: <input type="number" id="bottomOverhangRear" data-set-prop="bottomOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Выступ левой боковины сзади, мм: <input type="number" id="leftSideOverhangRear" data-set-prop="leftSideOverhangRear" min="0" max="20" value="0"></label>
+                    <label>Выступ правой боковины сзади, мм: <input type="number" id="rightSideOverhangRear" data-set-prop="rightSideOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Задняя стенка: <select id="backPanel" data-set-prop="backPanel"></select></label>
+                    <label>Углубление ЗС, мм: <input type="number" id="backPanelOffset" data-set-prop="backPanelOffset"></label>
+                    <hr>
+                    <label>Дверь: <select id="doorType" data-set-prop="doorType"></select></label>
+                    <label>Отступ двери снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <label>Отступ двери сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    <hr>
+                    <label>Spacers: <select id="spacers" data-set-prop="spacers"></select></label>
+                    <label id="spacerWidthLabel">Ширина спейсера, мм: <input type="number" id="spacerWidth" data-set-prop="spacerWidth"></label>
+                    <hr>
+                    <label>Количество полок, шт: <input type="number" id="shelfCount" data-set-prop="shelfCount" min="0" max="10"></label>
+                    <label>Полки: <select id="shelfType" data-set-prop="shelfType"></select></label>
+                    <label id="shelfLayoutLabel">Расположение полок: <select id="shelfLayout" data-set-prop="shelfLayout"></select></label>
+                    <label id="topShelfSpaceLabel">Высота над верхней полкой, мм: <input type="number" id="topShelfSpace" data-set-prop="topShelfSpace"></label>
+                `;
                 break;
-            case 'liftUpper': /* ... */ break;
+            case 'cornerUpperStorage':
+                // --- НОВЫЙ БЛОК ДЛЯ ВЕРХНЕГО УГЛОВОГО ---
+                fieldsHtml += `
+                    <p style="text-align: center; color: #555; margin-top:10px; font-weight:bold;">-- Настройки углового шкафа --</p>
+                    <label>Направление угла (авто): <input type="text" id="cornerDirectionDisplay" readonly class="readonly-style"></label>
+                    <label>Ширина фасада, мм: <input type="number" id="facadeWidth" min="50" step="10" data-set-prop="facadeWidth"></label>
+                    <label>Ширина углового элемента, мм: <input type="number" id="cornerElementWidth" min="10" step="1" data-set-prop="cornerElementWidth"></label>
+                    <label>Глубина соседа, мм (авто): <input type="number" id="neighborDepth" readonly class="readonly-style"></label>
+                    <hr>
+                    <label>Тип дна: <select id="bottomType" data-set-prop="bottomType"></select></label>
+                    <label>Конструкция дна: <select id="bottomConstruction" data-set-prop="bottomConstruction"></select></label>
+                    <label>Отступ дна спереди, мм: <input type="number" id="bottomFrontOffset" data-set-prop="bottomFrontOffset"></label>
+                    <label>Выступ дна сзади, мм: <input type="number" id="bottomOverhangRear" data-set-prop="bottomOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Выступ левой боковины сзади, мм: <input type="number" id="leftSideOverhangRear" data-set-prop="leftSideOverhangRear" min="0" max="20" value="0"></label>
+                    <label>Выступ правой боковины сзади, мм: <input type="number" id="rightSideOverhangRear" data-set-prop="rightSideOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Задняя стенка: <select id="backPanel" data-set-prop="backPanel"></select></label>
+                    <label>Углубление ЗС, мм: <input type="number" id="backPanelOffset" data-set-prop="backPanelOffset"></label>
+                    <hr>
+                    <label>Отступ двери снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <label>Отступ двери сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    <hr>
+                    <label>Количество полок, шт: <input type="number" id="shelfCount" data-set-prop="shelfCount" min="0" max="10"></label>
+                    <label>Полки: <select id="shelfType" data-set-prop="shelfType"></select></label>
+                    <label id="shelfLayoutLabel">Расположение полок: <select id="shelfLayout" data-set-prop="shelfLayout"></select></label>
+                    <label id="topShelfSpaceLabel">Высота над верхней полкой, мм: <input type="number" id="topShelfSpace" data-set-prop="topShelfSpace"></label>
+                `;
+                break;
+            case 'swingHood':
+                case 'swingHood':
+                fieldsHtml += `
+                    <label>Конструкция дна: <select id="bottomConstruction" data-set-prop="bottomConstruction"></select></label>
+                    <label>Отступ дна спереди, мм: <input type="number" id="bottomFrontOffset" data-set-prop="bottomFrontOffset"></label>
+                    <label>Выступ дна сзади, мм: <input type="number" id="bottomOverhangRear" data-set-prop="bottomOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <p style="text-align: center; color: #555; font-weight:bold;">-- Параметры вытяжки --</p>
+                    <label>Ширина вытяжки, мм: <input type="number" id="hoodWidth" data-set-prop="hoodWidth" min="300" max="1000"></label>
+                    <label>Глубина вытяжки, мм: <input type="number" id="hoodDepth" data-set-prop="hoodDepth" min="150" max="400"></label>
+                    <label>Высота вытяжки, мм: <input type="number" id="hoodHeight" data-set-prop="hoodHeight" min="40" max="600"></label>
+                    <label>Диаметр воздуховода, мм: <input type="number" id="hoodDuctDiameter" data-set-prop="hoodDuctDiameter" min="100" max="150"></label>
+                    <label>Смещение центра вытяжки от левого края, мм: <input type="number" id="hoodOffsetX" data-set-prop="hoodOffsetX"></label>
+                    <hr>
+                    <label>Выступ левой боковины сзади, мм: <input type="number" id="leftSideOverhangRear" data-set-prop="leftSideOverhangRear" min="0" max="20" value="0"></label>
+                    <label>Выступ правой боковины сзади, мм: <input type="number" id="rightSideOverhangRear" data-set-prop="rightSideOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Задняя стенка: <select id="backPanel" data-set-prop="backPanel"></select></label>
+                    <label>Углубление ЗС, мм: <input type="number" id="backPanelOffset" data-set-prop="backPanelOffset"></label>
+                    <hr>
+                    <label>Дверь: <select id="doorType" data-set-prop="doorType"></select></label>
+                    <label>Отступ двери снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <label>Отступ двери сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    <hr>
+                    <label>Spacers: <select id="spacers" data-set-prop="spacers"></select></label>
+                    <label id="spacerWidthLabel">Ширина спейсера, мм: <input type="number" id="spacerWidth" data-set-prop="spacerWidth"></label>
+                    <hr>
+                    <label>Количество полок, шт: <input type="number" id="shelfCount" data-set-prop="shelfCount" min="0" max="10"></label>
+                    <label>Полки: <select id="shelfType" data-set-prop="shelfType"></select></label>
+                    <label id="shelfLayoutLabel">Расположение полок: <select id="shelfLayout" data-set-prop="shelfLayout"></select></label>
+                    <label id="topShelfSpaceLabel">Высота над верхней полкой, мм: <input type="number" id="topShelfSpace" data-set-prop="topShelfSpace"></label>
+                `;
+                break;
+            case 'liftUpper':
+                fieldsHtml += `
+                    <label>Тип дна: <select id="bottomType" data-set-prop="bottomType"></select></label>
+                    <label>Конструкция дна: <select id="bottomConstruction" data-set-prop="bottomConstruction"></select></label>
+                    <label>Отступ дна спереди, мм: <input type="number" id="bottomFrontOffset" data-set-prop="bottomFrontOffset"></label>
+                    <label>Выступ дна сзади, мм: <input type="number" id="bottomOverhangRear" data-set-prop="bottomOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Выступ левой боковины сзади, мм: <input type="number" id="leftSideOverhangRear" data-set-prop="leftSideOverhangRear" min="0" max="20" value="0"></label>
+                    <label>Выступ правой боковины сзади, мм: <input type="number" id="rightSideOverhangRear" data-set-prop="rightSideOverhangRear" min="0" max="20" value="0"></label>
+                    <hr>
+                    <label>Задняя стенка: <select id="backPanel" data-set-prop="backPanel"></select></label>
+                    <label>Углубление ЗС, мм: <input type="number" id="backPanelOffset" data-set-prop="backPanelOffset"></label>
+                    <hr>
+                    <label>Отступ двери снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <label>Отступ двери сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    
+                    <label>Конструкция двери: <select id="liftDoorConstruction" data-set-prop="liftDoorConstruction"></select></label>
+                    
+                    <div class="menu-subsection">
+                        <p>-- Верхний фасад --</p>
+                        <label>Высота, мм: <input type="number" id="liftTopFacadeHeight" data-set-prop="liftTopFacadeHeight" min="240" max="600"></label>
+                        <label>Механизм: <select id="liftTopMechanism" data-set-prop="liftTopMechanism"></select></label>
+                    </div>
+
+                    <div id="liftBottomFacadeSection" class="menu-subsection">
+                        <p>-- Нижний фасад --</p>
+                        <label>Высота, мм: <input type="number" id="liftBottomFacadeHeight" readonly class="readonly-style"></label>
+                        <label>Механизм: <select id="liftBottomMechanism" data-set-prop="liftBottomMechanism"></select></label>
+                    </div>
+                    <button type="button" id="makeLiftFacadesSymmetricalBtn" class="menu-button-small">Сделать фасады симметричными</button>
+                    <hr>
+                    <label>Spacers: <select id="spacers" data-set-prop="spacers"></select></label>
+                    <label id="spacerWidthLabel">Ширина спейсера, мм: <input type="number" id="spacerWidth" data-set-prop="spacerWidth"></label>
+                    <hr>
+                    <label>Количество полок, шт: <input type="number" id="shelfCount" data-set-prop="shelfCount" min="0" max="10"></label>
+                    <label>Полки: <select id="shelfType" data-set-prop="shelfType"></select></label>
+                    <label id="shelfLayoutLabel">Расположение полок: <select id="shelfLayout" data-set-prop="shelfLayout"></select></label>
+                    <label id="topShelfSpaceLabel">Высота над верхней полкой, мм: <input type="number" id="topShelfSpace" data-set-prop="topShelfSpace"></label>
+                `;
+                break;
+            case 'liftHood':
+                // Заглушка для будущих типов
+                fieldsHtml += `<p>Настройки для "${cabinetConfig}" еще не реализованы.</p>`;
+                break;
+            case 'falsePanelUpper':
+                fieldsHtml += `
+                    <label>Отступ панели сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    <label>Отступ панели снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                `;
+                break;    
             case 'openUpper':
-                  fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
-                 break;
-             case 'cornerUpperStorage':
-                  fieldsHtml += `<label>Количество полок: <input type="number" id="shelfCount" value="${cabinet.shelfCount || 2}" min="0" data-set-prop="shelfCount"></label>`;
-                  break;
+                fieldsHtml += `
+                    <label>Конструкция дна: <select id="bottomConstruction" data-set-prop="bottomConstruction"></select></label>
+                    <label>Отступ дна спереди, мм: <input type="number" id="bottomFrontOffset" data-set-prop="bottomFrontOffset"></label>
+                    <label>Выступ дна сзади, мм: <input type="number" id="bottomOverhangRear" data-set-prop="bottomOverhangRear" min="0" max="20"></label>
+                    <hr>
+                    <label>Выступ левой боковины сзади, мм: <input type="number" id="leftSideOverhangRear" data-set-prop="leftSideOverhangRear" min="0" max="20"></label>
+                    <label>Выступ правой боковины сзади, мм: <input type="number" id="rightSideOverhangRear" data-set-prop="rightSideOverhangRear" min="0" max="20"></label>
+                    <hr>
+                    <label>Конструкция крыши: <select id="topConstruction" data-set-prop="topConstruction"></select></label>
+                    <hr>
+                    <label>Задняя стенка: <select id="backPanel" data-set-prop="backPanel"></select></label>
+                    <label>Углубление ЗС, мм: <input type="number" id="backPanelOffset" data-set-prop="backPanelOffset"></label>
+                    <label>Материал ЗС: <select id="backPanelMaterial" data-set-prop="backPanelMaterial"></select></label>
+                    <hr>
+                    <label>Количество полок, шт: <input type="number" id="shelfCount" data-set-prop="shelfCount" min="0" max="10"></label>
+                    <label id="shelfTypeLabel">Тип крепления полок: <select id="shelfType" data-set-prop="shelfType"></select></label>
+                    <label id="shelfMaterialLabel">Материал полок: <select id="shelfMaterial" data-set-prop="shelfMaterial"></select></label>
+                    <hr>
+                    <label id="doorOffsetTopLabel">Отступ двери сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
+                    <label id="doorOffsetBottomLabel">Отступ двери снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <hr>
+                    <label>Алюминиевый фасад: <select id="frameFacade" data-set-prop="frameFacade"></select></label>
+                    <label id="frameColorLabel">Цвет рамки: <select id="frameColor" data-set-prop="frameColor"></select></label>
+                `;
+                break;
+        }
+        // ==> ВОТ ИСПРАВЛЕНИЕ: ОБЩИЙ БЛОК ДЛЯ ВСЕХ ВЕРХНИХ ШКАФОВ С ФАСАДАМИ <==
+        if (cabinetConfig !== 'openUpper') {
+            fieldsHtml += '<hr>'; // Добавим разделитель для красоты
+            fieldsHtml += generateFacadeSetSelectHTML(cabinet);
+            fieldsHtml += generateTextureDirectionSelectHTML(cabinet);
         }
     } else { // Не верхний
         if (cabinetType === 'corner') {
@@ -1135,6 +1286,603 @@ function populateSelectOptions(cabinet) {
         }
     }
 
+    // ==> НАЧАЛО БЛОКА ДЛЯ `swingUpper` <==
+    if (cabinet.type === 'upperCabinet' && cabinet.cabinetConfig === 'swingUpper') {
+        const configMenu = document.getElementById('cabinetConfigMenu');
+        
+        // --- Получаем ссылки на все элементы ---
+        const bottomTypeSelect = configMenu.querySelector('#bottomType');
+        const bottomConstructionSelect = configMenu.querySelector('#bottomConstruction');
+        const bottomFrontOffsetInput = configMenu.querySelector('#bottomFrontOffset');
+        const bottomOverhangRearInput = configMenu.querySelector('#bottomOverhangRear'); // <-- Новая ссылка
+        const leftSideOverhangRearInput = configMenu.querySelector('#leftSideOverhangRear'); // <-- Новая ссылка
+        const rightSideOverhangRearInput = configMenu.querySelector('#rightSideOverhangRear'); // <-- Новая ссылка
+        const backPanelSelect = configMenu.querySelector('#backPanel');
+        const backPanelOffsetInput = configMenu.querySelector('#backPanelOffset');
+        const doorTypeSelect = configMenu.querySelector('#doorType');
+        const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+        const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const spacersSelect = configMenu.querySelector('#spacers');
+        const spacerWidthInput = configMenu.querySelector('#spacerWidth');
+        const shelfTypeSelect = configMenu.querySelector('#shelfType');
+        const shelfCountInput = configMenu.querySelector('#shelfCount');
+        const shelfLayoutSelect = configMenu.querySelector('#shelfLayout');
+        const topShelfSpaceInput = configMenu.querySelector('#topShelfSpace');
+
+        const shelfLayoutLabel = document.getElementById('shelfLayoutLabel');
+        const topShelfSpaceLabel = document.getElementById('topShelfSpaceLabel');
+        const spacerWidthLabel = document.getElementById('spacerWidthLabel');
+        
+        // --- Заполняем `select`-ы опциями ---
+        _fillSelect(bottomTypeSelect, [ {value: 'solid', text: 'Сплошное'}, {value: 'slats', text: 'Планки (сушка)'} ], cabinet.bottomType || 'solid');
+        _fillSelect(bottomConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'}, {value: 'insetGola', text: 'Вкладное с Gola'}, {value: 'overlayGola', text: 'Накладное с Gola'} ], cabinet.bottomConstruction || 'inset');
+        _fillSelect(backPanelSelect, [ {value: 'yes', text: 'Да'}, {value: 'no', text: 'Нет'} ], cabinet.backPanel || 'yes');
+        _fillSelect(doorTypeSelect, [ {value: 'double', text: 'Двойная'}, {value: 'left', text: 'Левая'}, {value: 'right', text: 'Правая'} ], cabinet.doorType || 'double');
+        _fillSelect(spacersSelect, [ {value: 'none', text: 'Нет'}, {value: 'left_narrow', text: 'Левый узкий'}, {value: 'right_narrow', text: 'Правый узкий'}, {value: 'left_wide', text: 'Левый широкий'}, {value: 'right_wide', text: 'Правый широкий'} ], cabinet.spacers || 'none');
+        _fillSelect(shelfTypeSelect, [ {value: 'confirmat', text: 'Евровинт'}, {value: 'shelfHolder', text: 'Полкодержатель'}, {value: 'secura7', text: 'Secura 7'} ], cabinet.shelfType || 'none');
+        _fillSelect(shelfLayoutSelect, [ {value: 'even', text: 'Равномерно'}, {value: 'uneven', text: 'Неравномерно'} ], cabinet.shelfLayout || 'even');
+        
+        // --- Заполняем `input`-ы значениями ---
+        bottomFrontOffsetInput.value = cabinet.bottomFrontOffset ?? 0;
+        bottomOverhangRearInput.value = cabinet.bottomOverhangRear ?? 0;
+        leftSideOverhangRearInput.value = cabinet.leftSideOverhangRear ?? 0;
+        rightSideOverhangRearInput.value = cabinet.rightSideOverhangRear ?? 0;
+        backPanelOffsetInput.value = cabinet.backPanelOffset ?? 0;
+        doorOffsetBottomInput.value = cabinet.doorOffsetBottom || 0;
+        doorOffsetTopInput.value = cabinet.doorOffsetTop || 0;
+        spacerWidthInput.value = cabinet.spacerWidth || 60;
+        topShelfSpaceInput.value = cabinet.topShelfSpace || 300;
+        shelfCountInput.value = cabinet.shelfCount ?? 0; 
+
+
+        // --- Функция для "умной" логики меню ---
+        const updateMenuLogic = () => {
+            // Считываем текущие значения из полей
+            const bottomConstruction = bottomConstructionSelect.value;
+            const shelfCount = parseInt(shelfCountInput.value) || 0;
+            const shelfLayout = shelfLayoutSelect.value;
+            const spacers = configMenu.querySelector('#spacers').value; // spacersSelect
+
+            // Логика для отступа дна
+            const isGolaBottom = bottomConstruction.includes('Gola');
+            bottomFrontOffsetInput.readOnly = isGolaBottom;
+            bottomFrontOffsetInput.classList.toggle('readonly-style', isGolaBottom);
+            if (isGolaBottom) {
+                bottomFrontOffsetInput.value = 20;
+            }
+
+            if (shelfLayoutLabel) {
+                shelfLayoutLabel.style.display = (shelfCount > 0) ? '' : 'none'; // Используем '', браузер сам подставит display
+            }
+            if (topShelfSpaceLabel) {
+                const showTopShelfSpace = (shelfCount > 0 && shelfLayout === 'uneven');
+                topShelfSpaceLabel.style.display = showTopShelfSpace ? '' : 'none';
+            }
+            if (shelfTypeSelect) {
+                // ==> ВОТ ИСПРАВЛЕНИЕ ДЛЯ БЛОКИРОВКИ <==
+                shelfTypeSelect.disabled = (shelfCount === 0);
+            }
+
+            // --- Логика для спейсера ---
+            if (spacerWidthLabel) {
+                const showSpacerWidth = spacers.includes('wide');
+                spacerWidthLabel.style.display = showSpacerWidth ? '' : 'none';
+            }
+        };
+
+        // --- Вешаем слушатели ---
+        bottomConstructionSelect.addEventListener('change', updateMenuLogic);
+        shelfCountInput.addEventListener('input', updateMenuLogic);
+        shelfLayoutSelect.addEventListener('change', updateMenuLogic);
+        spacersSelect.addEventListener('change', updateMenuLogic);
+
+        // --- Первоначальный запуск ---
+        updateMenuLogic();
+        //console.log("cabinet = ", cabinet);
+    } else if (cabinet.type === 'upperCabinet' && cabinet.cabinetConfig === 'swingHood') {
+        // --- НОВЫЙ БЛОК ДЛЯ ШКАФА С ВЫТЯЖКОЙ ---
+        const configMenu = document.getElementById('cabinetConfigMenu');
+        const panelThickness = window.getPanelThickness();
+        
+        // --- Получаем ссылки на ВСЕ элементы (копируем из swingUpper) ---
+        const bottomConstructionSelect = configMenu.querySelector('#bottomConstruction');
+        const bottomFrontOffsetInput = configMenu.querySelector('#bottomFrontOffset');
+        const bottomOverhangRearInput = configMenu.querySelector('#bottomOverhangRear'); // <-- Новая ссылка
+        const leftSideOverhangRearInput = configMenu.querySelector('#leftSideOverhangRear'); // <-- Новая ссылка
+        const rightSideOverhangRearInput = configMenu.querySelector('#rightSideOverhangRear'); // <-- Новая ссылка
+        const backPanelSelect = configMenu.querySelector('#backPanel');
+        const backPanelOffsetInput = configMenu.querySelector('#backPanelOffset');
+        const doorTypeSelect = configMenu.querySelector('#doorType');
+        const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+        const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const spacersSelect = configMenu.querySelector('#spacers');
+        const spacerWidthInput = configMenu.querySelector('#spacerWidth');
+        const shelfTypeSelect = configMenu.querySelector('#shelfType');
+        const shelfCountInput = configMenu.querySelector('#shelfCount');
+        const shelfLayoutSelect = configMenu.querySelector('#shelfLayout');
+        const topShelfSpaceInput = configMenu.querySelector('#topShelfSpace');
+        const shelfLayoutLabel = document.getElementById('shelfLayoutLabel');
+        const topShelfSpaceLabel = document.getElementById('topShelfSpaceLabel');
+        const spacerWidthLabel = document.getElementById('spacerWidthLabel');
+        // --- НОВЫЕ ССЫЛКИ ---
+        const hoodWidthInput = configMenu.querySelector('#hoodWidth');
+        const hoodDepthInput = configMenu.querySelector('#hoodDepth');
+        const hoodHeightInput = configMenu.querySelector('#hoodHeight');
+        const hoodDuctDiameterInput = configMenu.querySelector('#hoodDuctDiameter');
+        const hoodOffsetXInput = configMenu.querySelector('#hoodOffsetX');
+
+        // --- Заполняем `select`-ы опциями (копируем из swingUpper) ---
+        // Убираем _fillSelect для bottomType, так как его больше нет
+        _fillSelect(bottomConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'}, {value: 'insetGola', text: 'Вкладное с Gola'}, {value: 'overlayGola', text: 'Накладное с Gola'} ], cabinet.bottomConstruction || 'inset');
+        _fillSelect(backPanelSelect, [ {value: 'yes', text: 'Да'}, {value: 'no', text: 'Нет'} ], cabinet.backPanel || 'yes');
+        _fillSelect(doorTypeSelect, [ {value: 'double', text: 'Двойная'}, {value: 'left', text: 'Левая'}, {value: 'right', text: 'Правая'} ], cabinet.doorType || 'double');
+        _fillSelect(spacersSelect, [ {value: 'none', text: 'Нет'}, {value: 'left_narrow', text: 'Левый узкий'}, {value: 'right_narrow', text: 'Правый узкий'}, {value: 'left_wide', text: 'Левый широкий'}, {value: 'right_wide', text: 'Правый широкий'} ], cabinet.spacers || 'none');
+        _fillSelect(shelfTypeSelect, [ {value: 'confirmat', text: 'Евровинт'}, {value: 'shelfHolder', text: 'Полкодержатель'}, {value: 'secura7', text: 'Secura 7'} ], cabinet.shelfType || 'none');
+        _fillSelect(shelfLayoutSelect, [ {value: 'even', text: 'Равномерно'}, {value: 'uneven', text: 'Неравномерно'} ], cabinet.shelfLayout || 'even');
+        
+        // 1. Рассчитываем внутреннюю ширину шкафа
+        const innerWidth = cabinet.width - 2 * panelThickness;
+
+        // 2. Рассчитываем максимально допустимую ширину вытяжки
+        const maxHoodWidth = innerWidth - (2 / 1000); // Зазор по 1мм с каждой стороны
+        
+        // 3. Определяем и корректируем текущую ширину вытяжки
+        let currentHoodWidth = cabinet.hoodWidth ?? (cabinet.width >= 0.6 ? 560 : Math.floor(maxHoodWidth * 1000));
+        if (currentHoodWidth > maxHoodWidth * 1000) {
+            currentHoodWidth = Math.floor(maxHoodWidth * 1000);
+        }
+        // Принудительно обновляем значение в объекте, если оно изменилось
+        cabinet.hoodWidth = currentHoodWidth;
+        
+        // 4. Рассчитываем максимально допустимое смещение центра от ЦЕНТРА шкафа
+        const maxOffsetFromCenter = (innerWidth - (currentHoodWidth / 1000)) / 2 - (1 / 1000);
+
+        // 5. Рассчитываем мин/макс значения для поля "Смещение от ЛЕВОГО КРАЯ"
+        const centerOfCabinet = cabinet.width / 2;
+        const minOffsetX = centerOfCabinet - maxOffsetFromCenter;
+        const maxOffsetX = centerOfCabinet + maxOffsetFromCenter;
+
+        // 6. Определяем и корректируем текущее смещение
+        let currentOffsetX = cabinet.hoodOffsetX ?? (cabinet.width / 2 * 1000);
+        if (currentOffsetX < minOffsetX * 1000) currentOffsetX = Math.round(minOffsetX * 1000);
+        if (currentOffsetX > maxOffsetX * 1000) currentOffsetX = Math.round(maxOffsetX * 1000);
+        cabinet.hoodOffsetX = currentOffsetX;
+
+        // --- Заполняем `input`-ы значениями ---
+        bottomFrontOffsetInput.value = cabinet.bottomFrontOffset ?? 0;
+        bottomOverhangRearInput.value = cabinet.bottomOverhangRear ?? 0;
+        leftSideOverhangRearInput.value = cabinet.leftSideOverhangRear ?? 0;
+        rightSideOverhangRearInput.value = cabinet.rightSideOverhangRear ?? 0;
+        backPanelOffsetInput.value = cabinet.backPanelOffset ?? 0;
+        doorOffsetBottomInput.value = cabinet.doorOffsetBottom || 0;
+        doorOffsetTopInput.value = cabinet.doorOffsetTop || 0;
+        spacerWidthInput.value = cabinet.spacerWidth || 60;
+        topShelfSpaceInput.value = cabinet.topShelfSpace || 300;
+        shelfCountInput.value = cabinet.shelfCount ?? 0; 
+        // --- НОВЫЕ ПОЛЯ (с дефолтами) ---
+        hoodWidthInput.value = currentHoodWidth;
+        hoodOffsetXInput.value = currentOffsetX;
+        hoodOffsetXInput.min = Math.round(minOffsetX * 1000); // Устанавливаем динамические лимиты
+        hoodOffsetXInput.max = Math.round(maxOffsetX * 1000);
+        hoodDepthInput.value = cabinet.hoodDepth ?? 260;
+        hoodHeightInput.value = cabinet.hoodHeight ?? 200;
+        hoodDuctDiameterInput.value = cabinet.hoodDuctDiameter ?? 150;
+        // --- Функция для "умной" логики меню ---
+        const updateMenuLogic = () => {
+            // Считываем текущие значения из полей
+            const bottomConstruction = bottomConstructionSelect.value;
+            const shelfCount = parseInt(shelfCountInput.value) || 0;
+            const shelfLayout = shelfLayoutSelect.value;
+            const spacers = configMenu.querySelector('#spacers').value; // spacersSelect
+
+            // Логика для отступа дна
+            const isGolaBottom = bottomConstruction.includes('Gola');
+            bottomFrontOffsetInput.readOnly = isGolaBottom;
+            bottomFrontOffsetInput.classList.toggle('readonly-style', isGolaBottom);
+            if (isGolaBottom) {
+                bottomFrontOffsetInput.value = 20;
+            }
+
+            if (shelfLayoutLabel) {
+                shelfLayoutLabel.style.display = (shelfCount > 0) ? '' : 'none'; // Используем '', браузер сам подставит display
+            }
+            if (topShelfSpaceLabel) {
+                const showTopShelfSpace = (shelfCount > 0 && shelfLayout === 'uneven');
+                topShelfSpaceLabel.style.display = showTopShelfSpace ? '' : 'none';
+            }
+            if (shelfTypeSelect) {
+                // ==> ВОТ ИСПРАВЛЕНИЕ ДЛЯ БЛОКИРОВКИ <==
+                shelfTypeSelect.disabled = (shelfCount === 0);
+            }
+
+            // --- Логика для спейсера ---
+            if (spacerWidthLabel) {
+                const showSpacerWidth = spacers.includes('wide');
+                spacerWidthLabel.style.display = showSpacerWidth ? '' : 'none';
+            }
+        };
+
+        // --- Вешаем слушатели ---
+        bottomConstructionSelect.addEventListener('change', updateMenuLogic);
+        shelfCountInput.addEventListener('input', updateMenuLogic);
+        shelfLayoutSelect.addEventListener('change', updateMenuLogic);
+        spacersSelect.addEventListener('change', updateMenuLogic);
+        // Вешаем слушатель на ширину вытяжки, чтобы она влияла на смещение
+        hoodWidthInput.addEventListener('input', () => {
+            const newHoodWidth = parseFloat(hoodWidthInput.value);
+            if (isNaN(newHoodWidth)) return;
+            
+            // Пересчитываем лимиты для смещения "на лету"
+            const newMaxOffsetFromCenter = (innerWidth - (newHoodWidth / 1000)) / 2 - (1 / 1000);
+            const newMinOffsetX = centerOfCabinet - newMaxOffsetFromCenter;
+            const newMaxOffsetX = centerOfCabinet + newMaxOffsetFromCenter;
+
+            hoodOffsetXInput.min = Math.round(newMinOffsetX * 1000);
+            hoodOffsetXInput.max = Math.round(newMaxOffsetX * 1000);
+
+            // Если текущее смещение вышло за рамки, корректируем его
+            if (parseFloat(hoodOffsetXInput.value) < newMinOffsetX * 1000) {
+                hoodOffsetXInput.value = Math.round(newMinOffsetX * 1000);
+            }
+            if (parseFloat(hoodOffsetXInput.value) > newMaxOffsetX * 1000) {
+                hoodOffsetXInput.value = Math.round(newMaxOffsetX * 1000);
+            }
+        });
+
+        // --- Первоначальный запуск ---
+        updateMenuLogic();
+    } else if (cabinet.type === 'upperCabinet' && cabinet.cabinetConfig === 'liftUpper') {
+        const configMenu = document.getElementById('cabinetConfigMenu');
+        
+        // --- Получаем ссылки на все элементы ---
+        const bottomTypeSelect = configMenu.querySelector('#bottomType');
+        const bottomConstructionSelect = configMenu.querySelector('#bottomConstruction');
+        const bottomFrontOffsetInput = configMenu.querySelector('#bottomFrontOffset');
+        const bottomOverhangRearInput = configMenu.querySelector('#bottomOverhangRear'); // <-- Новая ссылка
+        const leftSideOverhangRearInput = configMenu.querySelector('#leftSideOverhangRear'); // <-- Новая ссылка
+        const rightSideOverhangRearInput = configMenu.querySelector('#rightSideOverhangRear'); // <-- Новая ссылка
+        const backPanelSelect = configMenu.querySelector('#backPanel');
+        const backPanelOffsetInput = configMenu.querySelector('#backPanelOffset');
+        //const doorTypeSelect = configMenu.querySelector('#doorType');
+        //const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+        //const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const spacersSelect = configMenu.querySelector('#spacers');
+        const spacerWidthInput = configMenu.querySelector('#spacerWidth');
+        const shelfTypeSelect = configMenu.querySelector('#shelfType');
+        const shelfCountInput = configMenu.querySelector('#shelfCount');
+        const shelfLayoutSelect = configMenu.querySelector('#shelfLayout');
+        const topShelfSpaceInput = configMenu.querySelector('#topShelfSpace');
+
+        const shelfLayoutLabel = document.getElementById('shelfLayoutLabel');
+        const topShelfSpaceLabel = document.getElementById('topShelfSpaceLabel');
+        const spacerWidthLabel = document.getElementById('spacerWidthLabel');
+
+        // --- НОВЫЕ ССЫЛКИ ДЛЯ ПОДЪЕМНИКА ---
+        const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+        const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const liftDoorConstructionSelect = configMenu.querySelector('#liftDoorConstruction');
+        const liftTopFacadeHeightInput = configMenu.querySelector('#liftTopFacadeHeight');
+        const liftTopMechanismSelect = configMenu.querySelector('#liftTopMechanism');
+        const liftBottomFacadeSection = configMenu.querySelector('#liftBottomFacadeSection');
+        const liftBottomFacadeHeightInput = configMenu.querySelector('#liftBottomFacadeHeight');
+        const liftBottomMechanismSelect = configMenu.querySelector('#liftBottomMechanism');
+        const makeSymmetricalBtn = configMenu.querySelector('#makeLiftFacadesSymmetricalBtn');
+        
+        // --- Заполняем `select`-ы опциями ---
+        _fillSelect(bottomTypeSelect, [ {value: 'solid', text: 'Сплошное'}, {value: 'slats', text: 'Планки (сушка)'} ], cabinet.bottomType || 'solid');
+        _fillSelect(bottomConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'}, {value: 'insetGola', text: 'Вкладное с Gola'}, {value: 'overlayGola', text: 'Накладное с Gola'} ], cabinet.bottomConstruction || 'inset');
+        _fillSelect(backPanelSelect, [ {value: 'yes', text: 'Да'}, {value: 'no', text: 'Нет'} ], cabinet.backPanel || 'yes');
+        //_fillSelect(doorTypeSelect, [ {value: 'double', text: 'Двойная'}, {value: 'left', text: 'Левая'}, {value: 'right', text: 'Правая'} ], cabinet.doorType || 'double');
+        _fillSelect(spacersSelect, [ {value: 'none', text: 'Нет'}, {value: 'left_narrow', text: 'Левый узкий'}, {value: 'right_narrow', text: 'Правый узкий'}, {value: 'left_wide', text: 'Левый широкий'}, {value: 'right_wide', text: 'Правый широкий'} ], cabinet.spacers || 'none');
+        _fillSelect(shelfTypeSelect, [ {value: 'confirmat', text: 'Евровинт'}, {value: 'shelfHolder', text: 'Полкодержатель'}, {value: 'secura7', text: 'Secura 7'} ], cabinet.shelfType || 'none');
+        _fillSelect(shelfLayoutSelect, [ {value: 'even', text: 'Равномерно'}, {value: 'uneven', text: 'Неравномерно'} ], cabinet.shelfLayout || 'even');
+        // --- ЗАПОЛНЯЕМ НОВЫЕ СЕЛЕКТЫ ---
+        // --- ДИНАМИЧЕСКОЕ ЗАПОЛНЕНИЕ "КОНСТРУКЦИИ ДВЕРИ" ---
+        const cabinetHeightMm = Math.round(cabinet.height * 1000);
+        let constructionOptions = [];
+
+        if (cabinetHeightMm >= 240 && cabinetHeightMm <= 479) {
+            constructionOptions = [
+                {value: 'single', text: 'Одинарная'}
+            ];
+        } else if (cabinetHeightMm >= 480 && cabinetHeightMm <= 600) {
+            constructionOptions = [
+                {value: 'single', text: 'Одинарная'},
+                {value: 'double_separate', text: 'Двойная (отдельные подъемники)'},
+                {value: 'double_folding', text: 'Двойная (складной подъемник)'}
+            ];
+        } else if (cabinetHeightMm > 600) {
+            constructionOptions = [
+                {value: 'double_separate', text: 'Двойная (отдельные подъемники)'},
+                {value: 'double_folding', text: 'Двойная (складной подъемник)'}
+            ];
+        }
+
+        // Проверяем, является ли текущее сохраненное значение допустимым
+        let currentConstruction = cabinet.liftDoorConstruction || 'single';
+        const isCurrentValueValid = constructionOptions.some(opt => opt.value === currentConstruction);
+        
+        // Если текущее значение недопустимо (например, высота изменилась),
+        // выбираем первое доступное значение по умолчанию.
+        if (!isCurrentValueValid && constructionOptions.length > 0) {
+            currentConstruction = constructionOptions[0].value;
+            cabinet.liftDoorConstruction = currentConstruction; // Сразу обновляем данные
+        }
+        
+        // Заполняем селект отфильтрованными опциями
+        _fillSelect(liftDoorConstructionSelect, constructionOptions, currentConstruction);
+
+        _fillSelect(liftTopMechanismSelect, [
+            {value: 'hk_xs', text: 'Aventos HK-XS'},
+            {value: 'hk_s', text: 'Aventos HK-S'},
+            {value: 'hk_top', text: 'Aventos HK-Top'},
+            {value: 'hf_top', text: 'Aventos HF Top'}
+        ], cabinet.liftTopMechanism || 'hk_top');
+        
+        _fillSelect(liftBottomMechanismSelect, [
+            {value: 'hk_xs', text: 'Aventos HK-XS'},
+            {value: 'hk_s', text: 'Aventos HK-S'},
+            {value: 'hk_top', text: 'Aventos HK-Top'},
+            {value: 'hf_top', text: 'Aventos HF Top'}
+        ], cabinet.liftBottomMechanism || 'hk_top');
+
+        // --- Заполняем `input`-ы значениями ---
+        bottomFrontOffsetInput.value = cabinet.bottomFrontOffset ?? 0;
+        bottomOverhangRearInput.value = cabinet.bottomOverhangRear ?? 0;
+        leftSideOverhangRearInput.value = cabinet.leftSideOverhangRear ?? 0;
+        rightSideOverhangRearInput.value = cabinet.rightSideOverhangRear ?? 0;
+        backPanelOffsetInput.value = cabinet.backPanelOffset ?? 0;
+        //doorOffsetBottomInput.value = cabinet.doorOffsetBottom || 0;
+        //doorOffsetTopInput.value = cabinet.doorOffsetTop || 0;
+        spacerWidthInput.value = cabinet.spacerWidth || 60;
+        topShelfSpaceInput.value = cabinet.topShelfSpace || 300;
+        shelfCountInput.value = cabinet.shelfCount ?? 0; 
+        // --- ЗАПОЛНЯЕМ НОВЫЕ ИНПУТЫ ---
+        doorOffsetBottomInput.value = cabinet.doorOffsetBottom ?? 0;
+        doorOffsetTopInput.value = cabinet.doorOffsetTop ?? 0;
+        liftTopFacadeHeightInput.value = cabinet.liftTopFacadeHeight ?? 240; // Дефолт 240
+
+
+        // --- Функция для "умной" логики меню ---
+        const updateLiftMenuLogic = () => {
+            // Считываем текущие значения из полей
+            const bottomConstruction = bottomConstructionSelect.value;
+            const shelfCount = parseInt(shelfCountInput.value) || 0;
+            const shelfLayout = shelfLayoutSelect.value;
+            const spacers = configMenu.querySelector('#spacers').value; // spacersSelect
+
+            const cabinetHeightMm = Math.round(cabinet.height * 1000);
+            const construction = liftDoorConstructionSelect.value;
+            const topFacadeHeight = parseInt(liftTopFacadeHeightInput.value) || 0;
+            const facadeGap = cabinet.facadeGap ? Math.round(cabinet.facadeGap * 1000) : 3;
+            const offsetTop = parseInt(configMenu.querySelector('#doorOffsetTop').value) || 0;
+            const offsetBottom = parseInt(configMenu.querySelector('#doorOffsetBottom').value) || 0;
+
+            // --- 3.2: Логика для селектов "Механизм" ---
+            const hkOptions = [
+                {value: 'hk_xs', text: 'Aventos HK-XS'},
+                {value: 'hk_s', text: 'Aventos HK-S'},
+                {value: 'hk_top', text: 'Aventos HK-Top'}
+            ];
+            const hfOption = [{value: 'hf_top', text: 'Aventos HF Top'}];
+
+            if (construction === 'double_folding') {
+                _fillSelect(liftTopMechanismSelect, hfOption, cabinet.liftTopMechanism || 'hf_top');
+                _fillSelect(liftBottomMechanismSelect, hfOption, cabinet.liftBottomMechanism || 'hf_top');
+            } else { // 'single' или 'double_separate'
+                _fillSelect(liftTopMechanismSelect, hkOptions, cabinet.liftTopMechanism || 'hk_top');
+                if (construction === 'double_separate') {
+                    _fillSelect(liftBottomMechanismSelect, hkOptions, cabinet.liftBottomMechanism || 'hk_top');
+                } else { // 'single'
+                    // Для одинарного фасада нижний селект должен быть пустым
+                    _fillSelect(liftBottomMechanismSelect, [], ''); 
+                }
+            }
+            
+            // --- 3.3: Видимость блока "Нижний фасад" и кнопки "Симметричные" ---
+            const isDoubleDoor = construction.includes('double');
+            liftBottomFacadeSection.style.display = isDoubleDoor ? 'block' : 'none';
+            makeSymmetricalBtn.style.display = isDoubleDoor ? 'block' : 'none';
+
+            
+            // --- НОВАЯ ЛОГИКА ДЛЯ ПОЛЯ "ВЫСОТА ВЕРХНЕГО ФАСАДА" ---
+            if (construction === 'single') {
+                // --- СЛУЧАЙ "ОДИНАРНАЯ ДВЕРЬ" ---
+                // 1. Делаем поле нередактируемым
+                liftTopFacadeHeightInput.readOnly = true;
+                liftTopFacadeHeightInput.classList.add('readonly-style');
+
+                // 2. Рассчитываем и устанавливаем полную высоту фасада
+                const singleFacadeHeight = cabinetHeightMm - offsetTop - offsetBottom;
+                liftTopFacadeHeightInput.value = singleFacadeHeight;
+
+            } else { // 'double_separate' или 'double_folding'
+                // --- СЛУЧАЙ "ДВОЙНАЯ ДВЕРЬ" ---
+                // 1. Делаем поле редактируемым
+                liftTopFacadeHeightInput.readOnly = false;
+                liftTopFacadeHeightInput.classList.remove('readonly-style');
+
+                // 2. Рассчитываем и устанавливаем МАКСИМАЛЬНОЕ значение
+                const minBottomFacadeHeight = 240; // Минимальная высота для нижнего фасада
+                const maxTopFacadeHeight = cabinetHeightMm - offsetTop - offsetBottom - facadeGap - minBottomFacadeHeight;
+                liftTopFacadeHeightInput.max = Math.max(0, maxTopFacadeHeight);
+
+                // 3. Проверяем, не превышает ли текущее значение максимум, и корректируем при необходимости
+                let currentTopHeight = parseInt(liftTopFacadeHeightInput.value) || 0;
+                if (currentTopHeight > maxTopFacadeHeight) {
+                    currentTopHeight = maxTopFacadeHeight;
+                    liftTopFacadeHeightInput.value = currentTopHeight;
+                }
+
+                // 4. Расчет высоты нижнего фасада "на лету" (как и раньше)
+                const bottomHeight = cabinetHeightMm - offsetTop - offsetBottom - currentTopHeight - facadeGap;
+                liftBottomFacadeHeightInput.value = Math.max(0, bottomHeight);
+            }
+
+            // Логика для отступа дна
+            const isGolaBottom = bottomConstruction.includes('Gola');
+            bottomFrontOffsetInput.readOnly = isGolaBottom;
+            bottomFrontOffsetInput.classList.toggle('readonly-style', isGolaBottom);
+            if (isGolaBottom) {
+                bottomFrontOffsetInput.value = 20;
+            }
+
+            if (shelfLayoutLabel) {
+                shelfLayoutLabel.style.display = (shelfCount > 0) ? '' : 'none'; // Используем '', браузер сам подставит display
+            }
+            if (topShelfSpaceLabel) {
+                const showTopShelfSpace = (shelfCount > 0 && shelfLayout === 'uneven');
+                topShelfSpaceLabel.style.display = showTopShelfSpace ? '' : 'none';
+            }
+            if (shelfTypeSelect) {
+                // ==> ВОТ ИСПРАВЛЕНИЕ ДЛЯ БЛОКИРОВКИ <==
+                shelfTypeSelect.disabled = (shelfCount === 0);
+            }
+
+            // --- Логика для спейсера ---
+            if (spacerWidthLabel) {
+                const showSpacerWidth = spacers.includes('wide');
+                spacerWidthLabel.style.display = showSpacerWidth ? '' : 'none';
+            }
+        };
+
+        // --- Вешаем слушатели ---
+        bottomConstructionSelect.addEventListener('change', updateLiftMenuLogic);
+        shelfCountInput.addEventListener('input', updateLiftMenuLogic);
+        shelfLayoutSelect.addEventListener('change', updateLiftMenuLogic);
+        spacersSelect.addEventListener('change', updateLiftMenuLogic);
+
+        // НОВЫЕ слушатели
+        liftDoorConstructionSelect.addEventListener('change', updateLiftMenuLogic);
+        liftTopFacadeHeightInput.addEventListener('input', updateLiftMenuLogic);
+        configMenu.querySelector('#doorOffsetTop').addEventListener('input', updateLiftMenuLogic);
+        configMenu.querySelector('#doorOffsetBottom').addEventListener('input', updateLiftMenuLogic);
+
+        // Слушатель для кнопки "Симметричные"
+        makeSymmetricalBtn.addEventListener('click', () => {
+            const facadeGap = cabinet.facadeGap ? Math.round(cabinet.facadeGap * 1000) : 3;
+            const offsetTop = parseInt(configMenu.querySelector('#doorOffsetTop').value) || 0;
+            const offsetBottom = parseInt(configMenu.querySelector('#doorOffsetBottom').value) || 0;
+            const totalFacadeHeight = Math.round(cabinet.height * 1000) - offsetTop - offsetBottom;
+
+            const symmetricalHeight = Math.ceil((totalFacadeHeight - facadeGap) / 2);
+
+            // Устанавливаем новое значение и снова запускаем всю логику обновления
+            liftTopFacadeHeightInput.value = symmetricalHeight;
+            updateLiftMenuLogic();
+        });
+
+
+        // --- Первоначальный запуск ---
+        updateLiftMenuLogic();
+        //console.log("cabinet = ", cabinet);
+    } else if (cabinet.type === 'upperCabinet' && cabinet.cabinetConfig === 'falsePanelUpper') {
+        const configMenu = document.getElementById('cabinetConfigMenu');
+        
+        const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+
+        doorOffsetTopInput.value = cabinet.doorOffsetTop ?? 0;
+        doorOffsetBottomInput.value = cabinet.doorOffsetBottom ?? 0;
+    } else if (cabinet.type === 'upperCabinet' && cabinet.cabinetConfig === 'openUpper') {
+        // --- НОВЫЙ БЛОК ДЛЯ ОТКРЫТЫХ ПОЛОК ---
+        const configMenu = document.getElementById('cabinetConfigMenu');
+        
+        // 2.1: Получаем ссылки на все элементы
+        const bottomConstructionSelect = configMenu.querySelector('#bottomConstruction');
+        const bottomFrontOffsetInput = configMenu.querySelector('#bottomFrontOffset');
+        const bottomOverhangRearInput = configMenu.querySelector('#bottomOverhangRear');
+        const leftSideOverhangRearInput = configMenu.querySelector('#leftSideOverhangRear');
+        const rightSideOverhangRearInput = configMenu.querySelector('#rightSideOverhangRear');
+        const topConstructionSelect = configMenu.querySelector('#topConstruction');
+        const backPanelSelect = configMenu.querySelector('#backPanel');
+        const backPanelOffsetInput = configMenu.querySelector('#backPanelOffset');
+        const backPanelMaterialSelect = configMenu.querySelector('#backPanelMaterial');
+        const shelfCountInput = configMenu.querySelector('#shelfCount');
+        const shelfTypeLabel = configMenu.querySelector('#shelfTypeLabel');
+        const shelfTypeSelect = configMenu.querySelector('#shelfType');
+        const shelfMaterialLabel = configMenu.querySelector('#shelfMaterialLabel');
+        const shelfMaterialSelect = configMenu.querySelector('#shelfMaterial');
+        const frameFacadeSelect = configMenu.querySelector('#frameFacade');
+        // --- НОВЫЕ СТРОКИ ---
+        const doorOffsetTopLabel = configMenu.querySelector('#doorOffsetTopLabel');
+        const doorOffsetTopInput = configMenu.querySelector('#doorOffsetTop');
+        const doorOffsetBottomLabel = configMenu.querySelector('#doorOffsetBottomLabel');
+        const doorOffsetBottomInput = configMenu.querySelector('#doorOffsetBottom');
+        // --- КОНЕЦ НОВЫХ СТРОК ---
+        const frameColorLabel = configMenu.querySelector('#frameColorLabel');
+        const frameColorSelect = configMenu.querySelector('#frameColor');
+
+        // 2.2: Заполняем `select`-ы опциями
+        _fillSelect(bottomConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'}, {value: 'insetGola', text: 'Вкладное с Gola'}, {value: 'overlayGola', text: 'Накладное с Gola'} ], cabinet.bottomConstruction || 'inset');
+        _fillSelect(topConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'} ], cabinet.topConstruction || 'inset');
+        _fillSelect(backPanelSelect, [ {value: 'yes', text: 'Да'}, {value: 'no', text: 'Нет'} ], cabinet.backPanel || 'yes');
+        _fillSelect(backPanelMaterialSelect, [ {value: 'hdf', text: 'ХДФ (белый)'}, {value: 'corpus', text: 'ЛДСП (материал корпуса)'} ], cabinet.backPanelMaterial || 'hdf');
+        _fillSelect(shelfTypeSelect, [ {value: 'confirmat', text: 'Евровинт'}, {value: 'shelfHolder', text: 'Полкодержатель'} ], cabinet.shelfType || 'confirmat');
+        _fillSelect(shelfMaterialSelect, [ {value: 'corpus', text: 'ЛДСП'}, {value: 'glass', text: 'Стекло'} ], cabinet.shelfMaterial || 'corpus');
+        _fillSelect(frameFacadeSelect, [ 
+            {value: 'none', text: 'Нет'}, 
+            {value: 'z1', text: 'Рамка Z-1'}, 
+            {value: 'z9', text: 'Рамка Z-9'}, // <-- Переименовано
+            {value: 'z12', text: 'Рамка Z-12'} // <-- Добавлено
+        ], cabinet.frameFacade || 'none');
+        _fillSelect(frameColorSelect, [ {value: 'aluminum', text: 'Алюминий'}, {value: 'black', text: 'Черный'}, {value: 'white', text: 'Белый'}, {value: 'bronze', text: 'Бронза'} ], cabinet.frameColor || 'aluminum');
+
+        // 2.3: Заполняем `input`-ы значениями
+        bottomFrontOffsetInput.value = cabinet.bottomFrontOffset ?? 0;
+        bottomOverhangRearInput.value = cabinet.bottomOverhangRear ?? 0;
+        leftSideOverhangRearInput.value = cabinet.leftSideOverhangRear ?? 0;
+        rightSideOverhangRearInput.value = cabinet.rightSideOverhangRear ?? 0;
+        backPanelOffsetInput.value = cabinet.backPanelOffset ?? 0;
+        shelfCountInput.value = cabinet.shelfCount ?? 2;
+        doorOffsetTopInput.value = cabinet.doorOffsetTop ?? 0;
+        doorOffsetBottomInput.value = cabinet.doorOffsetBottom ?? 0;
+
+        // 2.4: "Умная" логика меню
+        const updateOpenUpperMenuLogic = () => {
+            const hasBackPanel = backPanelSelect.value === 'yes';
+            const shelfCount = parseInt(shelfCountInput.value) || 0;
+            const shelfMaterial = shelfMaterialSelect.value;
+            const hasFrameFacade = frameFacadeSelect.value !== 'none';
+            const bottomConstruction = bottomConstructionSelect.value;
+
+            // Видимость полей задней стенки
+            backPanelOffsetInput.parentElement.style.display = hasBackPanel ? 'flex' : 'none';
+            backPanelMaterialSelect.parentElement.style.display = hasBackPanel ? 'flex' : 'none';
+
+            // Видимость полей полок
+            const showShelfFields = shelfCount > 0;
+            shelfMaterialLabel.style.display = showShelfFields ? 'flex' : 'none';
+            shelfTypeLabel.style.display = (showShelfFields && shelfMaterial === 'corpus') ? 'flex' : 'none';
+
+            // Видимость полей фасада
+            doorOffsetTopLabel.style.display = hasFrameFacade ? 'flex' : 'none';
+            doorOffsetBottomLabel.style.display = hasFrameFacade ? 'flex' : 'none';
+            frameColorLabel.style.display = hasFrameFacade ? 'flex' : 'none';
+
+             // --- НОВЫЙ БЛОК ДЛЯ GOLA ---
+            const isGolaBottom = bottomConstruction.includes('Gola');
+            bottomFrontOffsetInput.readOnly = isGolaBottom;
+            bottomFrontOffsetInput.classList.toggle('readonly-style', isGolaBottom);
+            if (isGolaBottom) {
+                bottomFrontOffsetInput.value = 20;
+            }
+
+            // --- КОНЕЦ НОВОГО БЛОКА ---
+        };
+
+        // 2.5: Вешаем слушатели
+        bottomConstructionSelect.addEventListener('change', updateOpenUpperMenuLogic);
+        backPanelSelect.addEventListener('change', updateOpenUpperMenuLogic);
+        shelfCountInput.addEventListener('input', updateOpenUpperMenuLogic);
+        shelfMaterialSelect.addEventListener('change', updateOpenUpperMenuLogic);
+        frameFacadeSelect.addEventListener('change', updateOpenUpperMenuLogic);
+
+        // 2.6: Первоначальный запуск
+        updateOpenUpperMenuLogic();
+    }
+
+
     // ==> НАЧАЛО ИЗМЕНЕНИЙ: ДОБАВЛЯЕМ ЛОГИКУ ДЛЯ УГЛОВОЙ МОЙКИ В КОНЕЦ ФУНКЦИИ <==
     if (cabinet.cabinetType === 'corner' && cabinet.cabinetConfig === 'sink') {
         
@@ -1182,9 +1930,128 @@ function populateSelectOptions(cabinet) {
             // Вызываем один раз, чтобы заполнить поле "Глубина соседа" при открытии
             updateNeighborInfo();
         }
+    } else if (cabinet.cabinetType === 'cornerUpper') {
+    // --- ФИНАЛЬНЫЙ БЛОК ДЛЯ ВЕРХНЕГО УГЛОВОГО ШКАФА ---
+
+    // --- ЧАСТЬ 1: Логика от corner/sink (поиск соседа и угловые параметры) ---
+    const directionDisplay = configMenuElement.querySelector('#cornerDirectionDisplay');
+    const facadeWidthInput = configMenuElement.querySelector('#facadeWidth');
+    const cornerElementInput = configMenuElement.querySelector('#cornerElementWidth');
+    const neighborDepthInput = configMenuElement.querySelector('#neighborDepth');
+
+    if (directionDisplay && facadeWidthInput && neighborDepthInput) {
+        // 1.1: Заполняем поля начальными значениями
+        const currentDirection = cabinet.cornerDirection || 'left';
+        directionDisplay.value = (currentDirection === 'left') ? 'Левый' : 'Правый';
+        
+        facadeWidthInput.value = Math.round((cabinet.facadeWidth || 0.45) * 1000);
+        cornerElementInput.value = Math.round((cabinet.cornerElementWidth || 0.018) * 1000);
+
+        // 1.2: Блокируем поле "ширина углового элемента" для Gola
+        const handleType = window.kitchenGlobalParams.handleType || 'standard';
+        cornerElementInput.disabled = (handleType === 'gola-profile');
+        if (handleType === 'gola-profile') {
+            // Для Gola "дельта" равна толщине фасада
+            const facadeSet = window.facadeSetsData.find(set => set.id === cabinet.facadeSet);
+            const { thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+            cornerElementInput.value = Math.round(facadeThicknessM * 1000);
+        }
+
+        // 1.3: "Живая" логика для поля "глубина соседа"
+        const neighbor = findNearestNeighbor(cabinet);
+        const pivotPositionM = calculateCornerPivotPosition(cabinet, neighbor, MaterialManager);
+        neighborDepthInput.value = Math.round(pivotPositionM * 1000);
     }
+    
+    // --- ЧАСТЬ 2: Логика от swingUpper (полки, дно и т.д.) ---
+    
+    // 2.1: Получаем ссылки на все остальные элементы
+    const bottomTypeSelect = configMenuElement.querySelector('#bottomType');
+    const bottomConstructionSelect = configMenuElement.querySelector('#bottomConstruction');
+    const bottomFrontOffsetInput = configMenuElement.querySelector('#bottomFrontOffset'); 
+    const bottomOverhangRearInput = configMenuElement.querySelector('#bottomOverhangRear');
+    const leftSideOverhangRearInput = configMenuElement.querySelector('#leftSideOverhangRear');
+    const rightSideOverhangRearInput = configMenuElement.querySelector('#rightSideOverhangRear');
+    const backPanelSelect = configMenuElement.querySelector('#backPanel');
+    const backPanelOffsetInput = configMenuElement.querySelector('#backPanelOffset');
+    const doorOffsetBottomInput = configMenuElement.querySelector('#doorOffsetBottom');
+    const doorOffsetTopInput = configMenuElement.querySelector('#doorOffsetTop');
+    const shelfCountInput = configMenuElement.querySelector('#shelfCount');
+    const shelfTypeSelect = configMenuElement.querySelector('#shelfType');
+    const shelfLayoutSelect = configMenuElement.querySelector('#shelfLayout');
+    const topShelfSpaceInput = configMenuElement.querySelector('#topShelfSpace');
+    const shelfLayoutLabel = configMenuElement.querySelector('#shelfLayoutLabel');
+    const topShelfSpaceLabel = configMenuElement.querySelector('#topShelfSpaceLabel');
+
+    // 2.2: Заполняем `select`-ы опциями
+    _fillSelect(bottomTypeSelect, [ {value: 'solid', text: 'Сплошное'}, {value: 'slats', text: 'Планки (сушка)'} ], cabinet.bottomType || 'solid');
+    _fillSelect(bottomConstructionSelect, [ {value: 'inset', text: 'Вкладное'}, {value: 'overlay', text: 'Накладное'}, {value: 'insetGola', text: 'Вкладное с Gola'}, {value: 'overlayGola', text: 'Накладное с Gola'} ], cabinet.bottomConstruction || 'inset');
+    _fillSelect(backPanelSelect, [ {value: 'yes', text: 'Да'}, {value: 'no', text: 'Нет'} ], cabinet.backPanel || 'yes');
+    // --- ИСПРАВЛЕНИЕ: Убираем "Без полок" ---
+    _fillSelect(shelfTypeSelect, [ {value: 'confirmat', text: 'Евровинт'}, {value: 'shelfHolder', text: 'Полкодержатель'}, {value: 'secura7', text: 'Secura 7'} ], cabinet.shelfType || 'confirmat');
+    _fillSelect(shelfLayoutSelect, [ {value: 'even', text: 'Равномерно'}, {value: 'uneven', text: 'Неравномерно'} ], cabinet.shelfLayout || 'even');
+    
+    // 2.3: Заполняем `input`-ы значениями
+    // --- ИЗМЕНЕНИЕ: Жестко задаем и блокируем отступ спереди для углового ---
+    if (bottomFrontOffsetInput) {
+        const panelThickness = window.getPanelThickness();
+        bottomFrontOffsetInput.value = Math.round(panelThickness * 1000);
+        bottomFrontOffsetInput.readOnly = true;
+        bottomFrontOffsetInput.classList.add('readonly-style');
+        // Также принудительно записываем это значение в сам объект шкафа
+        //cabinet.bottomFrontOffset = panelThickness;
+    }
+    bottomOverhangRearInput.value = cabinet.bottomOverhangRear ?? 0;
+    leftSideOverhangRearInput.value = cabinet.leftSideOverhangRear ?? 0;
+    rightSideOverhangRearInput.value = cabinet.rightSideOverhangRear ?? 0;
+    backPanelOffsetInput.value = cabinet.backPanelOffset ?? 0;
+    doorOffsetBottomInput.value = cabinet.doorOffsetBottom ?? 0;
+    doorOffsetTopInput.value = cabinet.doorOffsetTop ?? 0;
+    shelfCountInput.value = cabinet.shelfCount ?? 2; // Дефолт для углового - 2 полки
+    topShelfSpaceInput.value = cabinet.topShelfSpace || 300;
+
+    // 2.4: "Умная" логика меню (видимость/блокировка полей)
+    const updateUpperCornerMenuLogic = () => {
+        const bottomConstruction = bottomConstructionSelect.value;
+        const shelfCount = parseInt(shelfCountInput.value) || 0;
+        const shelfLayout = shelfLayoutSelect.value;
+
+        // Логика для отступа дна (Gola)
+        // const isGolaBottom = bottomConstruction.includes('Gola');
+        // bottomFrontOffsetInput.readOnly = isGolaBottom;
+        // bottomFrontOffsetInput.classList.toggle('readonly-style', isGolaBottom);
+        // if (isGolaBottom) bottomFrontOffsetInput.value = 20;
+
+        // Логика для полей полок
+        const showShelfFields = shelfCount > 0;
+        shelfTypeSelect.disabled = !showShelfFields;
+        shelfLayoutLabel.style.display = showShelfFields ? '' : 'none';
+        topShelfSpaceLabel.style.display = (showShelfFields && shelfLayout === 'uneven') ? '' : 'none';
+    };
+
+    // 2.5: Вешаем слушатели
+    bottomConstructionSelect.addEventListener('change', updateUpperCornerMenuLogic);
+    shelfCountInput.addEventListener('input', updateUpperCornerMenuLogic);
+    shelfLayoutSelect.addEventListener('change', updateUpperCornerMenuLogic);
+
+    // 2.6: Первоначальный запуск для установки правильного состояния
+    updateUpperCornerMenuLogic();
+}
+
     // ==> КОНЕЦ ИЗМЕНЕНИЙ <==
 
+}
+
+function _fillSelect(selectElement, options, currentValue) {
+    if (!selectElement) return;
+    selectElement.innerHTML = '';
+    options.forEach(opt => {
+        const optionEl = new Option(opt.text, opt.value);
+        if (opt.value === currentValue) {
+            optionEl.selected = true;
+        }
+        selectElement.appendChild(optionEl);
+    });
 }
 
 export function showCabinetConfigMenu(cabinetIndex, x, y, dependencies) {
@@ -2204,6 +3071,212 @@ export function openCountertopPickerModal(countertop) {
     modal.style.display = 'block';
 }
 
+/**
+ * Открывает окно выбора материала для фартука (плитка или панель).
+ * @param {object} apronObject - Объект фартука (для чтения текущих данных)
+ * @param {string} currentType - 'tiles' или 'panel' (определяет какую базу грузить)
+ * @param {function} onSelectCallback - Функция обратного вызова (id, type) -> void
+ */
+export function openApronMaterialPicker(apronObject, currentType, onSelectCallback) {
+    let dataArray = [];
+    let title = "";
+
+    // 1. Определяем источник данных
+    if (currentType === 'tiles') {
+        if (!window.tilesOptionsData) {
+            alert("Ошибка: База данных плитки (tilesOptionsData) не загружена!"); 
+            return;
+        }
+        dataArray = window.tilesOptionsData;
+        title = "Выбор декора плитки";
+    } else {
+        // Для панели используем базу столешниц
+        if (!window.countertopOptionsData) {
+            alert("Ошибка: База данных столешниц (countertopOptionsData) не загружена!");
+            return;
+        }
+        dataArray = window.countertopOptionsData;
+        title = "Выбор декора панели (Скиналь)";
+    }
+
+    // 2. Ищем или создаем контейнер модалки
+    let modal = document.getElementById('apronMaterialModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'apronMaterialModal';
+        modal.className = 'decor-picker-modal'; // Используем твои существующие CSS классы
+        document.body.appendChild(modal);
+    }
+
+    // 3. Генерируем HTML
+    let html = `
+    <div class="decor-picker-content">
+        <div class="decor-picker-header">
+            <span>${title}</span>
+            <span class="decor-picker-close">×</span>
+        </div>
+        <div class="decor-picker-body">
+            <div class="decor-grid">`;
+
+    dataArray.forEach(item => {
+        // Определяем, что показывать: картинку или цвет
+        let visualBlock = '';
+        
+        // Логика: если есть preview - показываем его. 
+        // Если нет preview, но есть textureImage - показываем её.
+        // Если нет картинок - показываем цвет.
+        const imgPath = item.preview || item.textureImage;
+
+        if (imgPath) {
+            visualBlock = `<img src="${imgPath}" alt="${item.name}" class="decor-preview-img" style="width:100%; height:80px; object-fit:cover;">`;
+        } else {
+            // Фалбек на цвет (если задан, или серый)
+            const color = item.color || item.baseColor || '#cccccc';
+            visualBlock = `<div style="width:100%; height:80px; background-color:${color}; border:1px solid #ddd;"></div>`;
+        }
+
+        html += `
+            <div class="decor-grid-item" data-id="${item.id}" title="${item.name}">
+                ${visualBlock}
+                <span>${item.name}</span>
+            </div>`;
+    });
+
+    html += `
+            </div>
+        </div>
+    </div>`;
+    
+    modal.innerHTML = html;
+
+    // 4. Навешиваем обработчики
+    const closeModal = () => modal.style.display = 'none';
+    
+    // Закрытие по крестику
+    const closeBtn = modal.querySelector('.decor-picker-close');
+    if (closeBtn) closeBtn.onclick = closeModal;
+
+    // Закрытие по клику вне окна
+    modal.onclick = (e) => {
+        if (e.target === modal) closeModal();
+    };
+
+    // Клик по элементу
+    modal.querySelectorAll('.decor-grid-item').forEach(div => {
+        div.onclick = () => {
+            const id = div.dataset.id;
+            
+            // Вызываем callback, передавая данные
+            // Мы передаем также type, чтобы MaterialManager знал, в какой базе искать ID
+            if (onSelectCallback) {
+                onSelectCallback({ id: id, type: currentType });
+            }
+            
+            closeModal();
+        };
+    });
+
+    modal.style.display = 'block';
+}
+
+/**
+ * Открывает окно выбора материала для цоколя (из базы фасадов).
+ */
+export function openPlinthMaterialPicker(plinthObject, onSelectCallback) {
+    // Используем базу фасадов
+    // Но ты говорил, что там должны быть еще 5 цветов пластика.
+    // Мы можем объединить их: [ ...facadeData.ldsp, ...plasticColors ]
+    // Или использовать только ldsp/mdf если пластика пока нет в JSON.
+    
+    // Предположим, мы показываем вкладку 'ldsp' из фасадов + доп. цвета
+    // Или просто список всех декоров.
+    
+    const facadeData = window.facadeOptionsData;
+    if (!facadeData) { alert("База фасадов не загружена"); return; }
+
+    // Собираем список для отображения.
+    // Обычно фасады разбиты по категориям (ldsp, mdf...).
+    // Давай возьмем декоры из 'ldsp' как основу.
+    let items = [];
+    if (facadeData['ldsp'] && facadeData['ldsp'].decors) {
+        items = [...facadeData['ldsp'].decors];
+    }
+    
+    // Добавляем спец. цвета для цоколя (если их нет в базе)
+    const specialColors = [
+        { id: 'plinth_white_matt', name: 'Белый матовый', color: '#FFFFFF', isSolid: true },
+        { id: 'plinth_white_gloss', name: 'Белый глянец', color: '#FFFFFF', isSolid: true, roughness: 0.1 },
+        { id: 'plinth_black_matt', name: 'Черный матовый', color: '#111111', isSolid: true },
+        { id: 'plinth_black_gloss', name: 'Черный глянец', color: '#111111', isSolid: true, roughness: 0.1 },
+        { id: 'plinth_silver', name: 'Серебристый', color: '#C0C0C0', isSolid: true, metalness: 0.8 }
+    ];
+    items = [...specialColors, ...items];
+
+    // Создаем модалку (код аналогичен ApronPicker)
+    let modal = document.getElementById('plinthMaterialModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'plinthMaterialModal';
+        modal.className = 'decor-picker-modal';
+        document.body.appendChild(modal);
+    }
+
+    let html = `
+    <div class="decor-picker-content">
+        <div class="decor-picker-header"><span>Материал цоколя</span><span class="decor-picker-close">×</span></div>
+        <div class="decor-picker-body"><div class="decor-grid">`;
+
+    items.forEach(item => {
+        // Визуал
+        let visual = '';
+        // Проверяем textureImage (из фасадов) или color (из спец цветов)
+        // В фасадах поле называется textureImage или previewImage? 
+        // В твоем примере было: "textureImage": "textures/xl/..."
+        
+        const img = item.previewImage || item.textureImage || item.preview; 
+        
+        if (img) {
+            visual = `<img src="${img}" style="width:100%; height:80px; object-fit:cover;">`;
+        } else {
+            const col = item.displayColor || item.color || '#ccc';
+            visual = `<div style="width:100%; height:80px; background:${col}; border:1px solid #ddd;"></div>`;
+        }
+
+        // Используем value или id как идентификатор
+        const id = item.value || item.id; 
+
+        html += `
+            <div class="decor-grid-item" data-id="${id}" title="${item.text || item.name}">
+                ${visual}
+                <span>${item.text || item.name}</span>
+            </div>`;
+    });
+
+    html += `</div></div></div>`;
+    modal.innerHTML = html;
+
+    // Обработчики
+    const closeModal = () => modal.style.display = 'none';
+    modal.querySelector('.decor-picker-close').onclick = closeModal;
+    modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+
+    modal.querySelectorAll('.decor-grid-item').forEach(div => {
+        div.onclick = () => {
+            const id = div.dataset.id;
+            
+            // Ищем полные данные о выбранном элементе
+            const selectedItem = items.find(i => (i.value || i.id) === id);
+            
+            if (onSelectCallback) {
+                onSelectCallback(selectedItem); // Передаем весь объект, чтобы MaterialManager мог его прочитать
+            }
+            closeModal();
+        };
+    });
+
+    modal.style.display = 'block';
+}
+
 // Функция для контекстного меню стены
 export function showWallContextMenu(x, y, faceIndex) {
     // Сначала прячем все другие возможные меню
@@ -2620,7 +3693,9 @@ export function showFloorSettingsMenu(x, y) {
         if (newFloor) {
             window.scene.add(newFloor);
             window.setFloorObject(newFloor);
-            window.floorObject.userData = { settings: { ...finalParams, materialId: finalMaterialId } };
+            window.floorObject.userData.floorParams = finalParams;
+            window.floorObject.userData.materialId = finalMaterialId;
+
         } else {
             // Если генерация не удалась, сбрасываем объект
             window.setFloorObject(null);

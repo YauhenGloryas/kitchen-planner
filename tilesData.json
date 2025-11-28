@@ -1,0 +1,105 @@
+[
+  {
+    "id": "tile_gloss_white",
+    "name": "Белый Глянец",
+    "type": "tiles",
+    "isSolidColor": true,
+    "color": "#FFFFFF",
+    "roughness": 0.05,
+    "metalness": 0.0
+  },
+  {
+    "id": "tile_matt_grey",
+    "name": "Серый Матовый",
+    "type": "tiles",
+    "isSolidColor": true,
+    "color": "#BBBBBB",
+    "roughness": 0.65,
+    "metalness": 0.0
+  },
+  {
+    "id": "BlueSavoy",
+    "name": "BlueSavoy 60x60",
+    "type": "tiles",
+    "isSolidColor": false,
+    "baseColor": "#BBBBBB",
+    "textureImage": "textures/tiles/blsv60x60.jpg",
+    "preview": "textures/tiles/previews/blsv60x60_prew.jpg",
+    "roughness": 0.2,
+    "metalness": 0.0
+  },
+  {
+    "id": "alma_cera_set1",
+    "name": "Алма Керамика 1 60х60",
+    "type": "tiles",
+    "isSolidColor": false,
+    "baseColor": "#BBBBBB",
+    "preview": "textures/tiles/set_1/set1_60x60_prew.jpg",
+    "textureVariants": [
+      "textures/tiles/set_1/tile_01.jpg",
+      "textures/tiles/set_1/tile_02.jpg",
+      "textures/tiles/set_1/tile_03.jpg",
+      "textures/tiles/set_1/tile_04.jpg"
+    ],
+    "roughness": 0.6,
+    "metalness": 0.0
+  },
+  {
+    "id": "blue_cristal",
+    "name": "Голубой кварц 60х120",
+    "type": "tiles",
+    "isSolidColor": false,
+    "baseColor": "#BBBBBB",
+    "preview": "textures/tiles/krist/kryst_600x1200_prew.jpg",
+    "textureVariants": [
+      "textures/tiles/krist/01_600x1200.jpg",
+      "textures/tiles/krist/02_600x1200.jpg",
+      "textures/tiles/krist/03_600x1200.jpg",
+      "textures/tiles/krist/04_600x1200.jpg",
+      "textures/tiles/krist/05_600x1200.jpg"
+    ],
+    "roughness": 0.05,
+    "metalness": 0.0
+  },
+  {
+    "id": "pachwork",
+    "name": "Пэчворк серый 10х10",
+    "type": "tiles",
+    "isSolidColor": false,
+    "baseColor": "#BBBBBB",
+    "preview": "textures/tiles/peachwork_mev/prev.jpg",
+    "textureVariants": [
+      "textures/tiles/peachwork_mev/01_100x100.jpg",
+      "textures/tiles/peachwork_mev/02_100x100.jpg",
+      "textures/tiles/peachwork_mev/03_100x100.jpg",
+      "textures/tiles/peachwork_mev/04_100x100.jpg",
+      "textures/tiles/peachwork_mev/05_100x100.jpg",
+      "textures/tiles/peachwork_mev/06_100x100.jpg",
+      "textures/tiles/peachwork_mev/07_100x100.jpg",
+      "textures/tiles/peachwork_mev/08_100x100.jpg",
+      "textures/tiles/peachwork_mev/09_100x100.jpg",
+      "textures/tiles/peachwork_mev/10_100x100.jpg",
+      "textures/tiles/peachwork_mev/11_100x100.jpg",
+      "textures/tiles/peachwork_mev/12_100x100.jpg"
+    ],
+    "roughness": 0.65,
+    "metalness": 0.0
+  },
+  {
+    "id": "onyx_crack_polish",
+    "name": "Оникс полированный белый 120х60",
+    "type": "tiles",
+    "isSolidColor": false,
+    "baseColor": "#DDDDDD",
+    "preview": "textures/tiles/onyx_crack_polished/onyx_crack_polish_60x120_prew.jpg",
+    "textureVariants": [
+      "textures/tiles/onyx_crack_polished/01_600x1200.jpg",
+      "textures/tiles/onyx_crack_polished/02_600x1200.jpg",
+      "textures/tiles/onyx_crack_polished/03_600x1200.jpg",
+      "textures/tiles/onyx_crack_polished/04_600x1200.jpg",
+      "textures/tiles/onyx_crack_polished/05_600x1200.jpg"
+    ],
+    "roughness": 0.08,
+    "metalness": 0.0
+  }
+]
