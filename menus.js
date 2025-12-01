@@ -2,6 +2,8 @@
 import { historyManager } from './HistoryManager.js';
 import { UpdateCountertopCommand } from './Commands.js';
 import { applyMaterialToWall,
+        getWallMaterial,
+        getOriginalWallMaterial,
             materials
         } from './roomManager.js'; 
          
@@ -341,6 +343,13 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
                 fieldsHtml += `
                     <label>Отступ панели сверху, мм: <input type="number" id="doorOffsetTop" data-set-prop="doorOffsetTop"></label>
                     <label>Отступ панели снизу, мм: <input type="number" id="doorOffsetBottom" data-set-prop="doorOffsetBottom"></label>
+                    <!-- НОВЫЙ СЕЛЕКТ -->
+                    <label>Ориентация: 
+                        <select id="fp_side" data-set-prop="fp_side">
+                            <option value="left" ${cabinet.fp_side === 'left' ? 'selected' : ''}>Левая (лицо влево)</option>
+                            <option value="right" ${cabinet.fp_side === 'right' ? 'selected' : ''}>Правая (лицо вправо)</option>
+                        </select>
+                    </label>
                 `;
                 break;    
             case 'openUpper':
@@ -2256,36 +2265,41 @@ export function showFacadeSetsManager(x = window.innerWidth / 2, y = window.inne
     hideKitchenParamsMenu(); // Скроем меню глобальных настроек
 
     let managerMenu = document.getElementById('facadeSetsManagerMenu');
+    let isNewMenu = false;
     if (!managerMenu) {
         managerMenu = document.createElement('div');
         managerMenu.id = 'facadeSetsManagerMenu';
         managerMenu.className = 'facade-sets-manager'; // Новый класс для стилей
         document.body.appendChild(managerMenu);
+        isNewMenu = true; // Это новое меню
     }
+
 
     // Генерируем HTML меню
     managerMenu.innerHTML = createFacadeSetsManagerHTML();
 
     // Позиционирование меню
     managerMenu.style.display = 'block';
-    setTimeout(() => { // Даем время на рендеринг для расчета размеров
-        const menuWidth = managerMenu.offsetWidth;
-        const menuHeight = managerMenu.offsetHeight;
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
+    if (isNewMenu) {
+        setTimeout(() => { // Даем время на рендеринг для расчета размеров
+            const menuWidth = managerMenu.offsetWidth;
+            const menuHeight = managerMenu.offsetHeight;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
 
-        let adjustedX = x - menuWidth / 2; // Центрируем по X относительно точки вызова
-        let adjustedY = y; // Y оставляем как передан
+            let adjustedX = x - menuWidth / 2; // Центрируем по X относительно точки вызова
+            let adjustedY = y; // Y оставляем как передан
 
-        // Коррекция по границам окна
-        if (adjustedX + menuWidth > viewportWidth) adjustedX = viewportWidth - menuWidth - 10;
-        if (adjustedY + menuHeight > viewportHeight) adjustedY = viewportHeight - menuHeight - 10;
-        adjustedX = Math.max(10, adjustedX);
-        adjustedY = Math.max(10, adjustedY);
+            // Коррекция по границам окна
+            if (adjustedX + menuWidth > viewportWidth) adjustedX = viewportWidth - menuWidth - 10;
+            if (adjustedY + menuHeight > viewportHeight) adjustedY = viewportHeight - menuHeight - 10;
+            adjustedX = Math.max(10, adjustedX);
+            adjustedY = Math.max(10, adjustedY);
 
-        managerMenu.style.left = `${adjustedX}px`;
-        managerMenu.style.top = `${adjustedY}px`;
-    }, 0);
+            managerMenu.style.left = `${adjustedX}px`;
+            managerMenu.style.top = `${adjustedY}px`;
+        }, 0);
+    }
 
     // Добавляем обработчики (например, для кнопки "Добавить")
     const addButton = managerMenu.querySelector('#addFacadeSetBtn');
@@ -2334,93 +2348,68 @@ function createFacadeSetsManagerHTML() {
 
 // --- Функция генерации HTML для ОДНОЙ Строки Набора Фасадов ---
 
+// --- Функция генерации HTML для ОДНОЙ Строки ---
 function createFacadeSetRowHTML(setData, index) {
-    const loadedFacadeData = window.facadeOptionsData || {}; // Получаем загруженные данные
-    // --- Добавляем лог для проверки данных ---
-    // console.log("[createFacadeSetRowHTML] Данные для генерации строки:", loadedFacadeData);
-    if (Object.keys(loadedFacadeData).length === 0) {
-        console.error("[createFacadeSetRowHTML] Ошибка: Загруженные данные facadeOptionsData пусты!");
-    }
-    // -----------------------------------------
-
+    const loadedFacadeData = window.facadeOptionsData || {};
     const setId = setData.id || `set_${Date.now()}_${index}`;
     const setName = setData.name || `Набор фасадов ${index + 1}`;
-    // Определяем текущий тип материала, проверяя, есть ли он в загруженных данных
+    
+    // Определяем тип материала
     let currentMaterialType = setData.materialType;
     if (!currentMaterialType || !loadedFacadeData[currentMaterialType]) {
-        // Если тип не задан или некорректен, берем первый ключ из загруженных данных
-        currentMaterialType = Object.keys(loadedFacadeData)[0];
-        console.warn(`[createFacadeSetRowHTML] Тип материала для ${setId} не найден или некорректен, используется дефолтный: ${currentMaterialType}`);
-        if (!currentMaterialType) { // На случай, если и данных нет
-            console.error("[createFacadeSetRowHTML] Не найдено ни одного типа материала в загруженных данных!");
-            currentMaterialType = 'ldsp'; // Крайний случай
-        }
+        currentMaterialType = Object.keys(loadedFacadeData)[0] || 'ldsp';
     }
 
     const currentMaterialInfo = loadedFacadeData[currentMaterialType] || {};
-    const useColor = currentMaterialInfo.useColorPicker || false;
-    const currentTextureValue = setData.texture;
-    const currentColorValue = setData.color || '#ffffff';
+    
+    // ФЛАГИ: Что нужно показать для этого материала?
+    const showColorPicker = currentMaterialInfo.useColorPicker || false;
+    const showDecorButton = currentMaterialInfo.decors && currentMaterialInfo.decors.length > 0;
+
     const currentThickness = setData.thickness !== undefined ? setData.thickness : currentMaterialInfo.defaultThickness || 18;
     const isThicknessEditable = currentMaterialInfo.isThicknessEditable !== undefined ? currentMaterialInfo.isThicknessEditable : true;
     const minThickness = currentMaterialInfo.minThickness || 12;
     const maxThickness = currentMaterialInfo.maxThickness || 22;
 
-    const textureDisabled = useColor ? 'disabled' : '';
-    const colorDisabled = !useColor ? 'disabled' : '';
+    // --- Опции типа материала ---
+    const materialKeys = Object.keys(loadedFacadeData);
+    const materialOptions = materialKeys.map(key => {
+        const info = loadedFacadeData[key];
+        const name = info?.name || key;
+        const selected = key === currentMaterialType ? 'selected' : '';
+        return `<option value="${key}" ${selected}>${name}</option>`;
+    }).join('');
 
-    // --- Формируем опции для ТИПА МАТЕРИАЛА с отладкой ---
-    let materialOptions = ''; // Инициализируем пустой строкой
-    try {
-        const materialKeys = Object.keys(loadedFacadeData);
-        console.log(`[createFacadeSetRowHTML] Ключи материалов для селекта (${setId}):`, materialKeys); // Лог ключей
-        if (materialKeys.length === 0) {
-             console.warn(`[createFacadeSetRowHTML] Нет ключей материалов в loadedFacadeData для генерации опций!`);
-        }
-        materialOptions = materialKeys.map(key => {
-            const materialInfo = loadedFacadeData[key];
-            const name = materialInfo?.name || key; // Используем имя или ключ как fallback
-            const selectedAttr = key === currentMaterialType ? 'selected' : '';
-            // console.log(` - Генерация опции: value=${key}, text=${name}, selected=${selectedAttr}`); // Лог для каждой опции
-            return `<option value="${key}" ${selectedAttr}>${name}</option>`;
-        }).join('');
-         console.log(`[createFacadeSetRowHTML] Сгенерированные опции материала (${setId}): ${materialOptions.length > 100 ? materialOptions.substring(0,100)+'...' : materialOptions}`); // Лог результата
-    } catch (error) {
-        console.error(`[createFacadeSetRowHTML] Ошибка при генерации опций материала для ${setId}:`, error);
-        materialOptions = '<option value="">Ошибка</option>'; // Показываем ошибку в селекте
-    }
-    // --- Конец блока генерации опций материала ---
+    // --- Содержимое колонки Декор/Цвет ---
+    let decorColorContent = '';
 
-    // Формируем опции для текстуры/декора (оставляем как было)
-    let textureOptions = '';
-    // ... (Ваш существующий код генерации textureOptions) ...
-    if (!useColor && currentMaterialInfo.decors && currentMaterialInfo.decors.length > 0) {
-        textureOptions = currentMaterialInfo.decors.map(decor => {
-            const colorSwatch = `<span class="color-swatch" style="background-color:${decor.displayColor || '#ccc'};"></span>`;
-            return `<option value="${decor.value}" data-color="${decor.displayColor || '#ccc'}" ${decor.value === currentTextureValue ? 'selected' : ''}>${decor.text}</option>`;
-        }).join('');
-        // Добавляем цветные квадратики в CSS через data-атрибут
-         const styles = currentMaterialInfo.decors.map(decor =>
-            `.facade-set-row .texture-select option[data-color="${decor.displayColor || '#ccc'}"] {
-                 background-image: linear-gradient(to right, ${decor.displayColor || '#ccc'}, ${decor.displayColor || '#ccc'} 16px, transparent 16px);
-             }`
-         ).join('\n');
-         // Добавляем стили динамически (менее предпочтительно, лучше в CSS)
-         /*
-         let styleSheet = document.getElementById('dynamic-facade-styles');
-         if (!styleSheet) {
-             styleSheet = document.createElement('style');
-             styleSheet.id = 'dynamic-facade-styles';
-             document.head.appendChild(styleSheet);
-         }
-         styleSheet.textContent = styles; // Перезаписываем стили
-         */
-
-    } else if (!useColor) {
-        textureOptions = '<option value="">-- Нет декоров --</option>';
+    // 1. Кнопка Декора (если есть список decors)
+    if (showDecorButton) {
+        decorColorContent += `
+            <button type="button" class="decor-select-btn" title="Выбрать декор/тип" style="flex-grow: 1;">
+                <!-- Текст обновится JS-ом -->
+                Выбрать...
+            </button>
+        `;
     }
 
-    // Генерируем HTML строки
+    // 2. Инпут Цвета (если useColorPicker)
+    if (showColorPicker) {
+        // Добавляем отступ, если есть кнопка
+        const marginStyle = showDecorButton ? 'margin-left: 5px;' : '';
+        decorColorContent += `
+            <div style="display: flex; align-items: center; ${marginStyle}">
+                <input type="color" class="set-color-input" value="${setData.color || '#ffffff'}" 
+                       style="width: 40px; height: 30px; cursor: pointer; border: 1px solid #ccc; padding: 0;">
+            </div>
+        `;
+    }
+
+    // Если ничего нет (странно, но бывает)
+    if (!showDecorButton && !showColorPicker) {
+        decorColorContent = '<span style="color:#aaa; font-size:12px;">Нет опций</span>';
+    }
+
     return `
         <div class="facade-set-row" data-id="${setId}" data-index="${index}">
             <div class="facade-set-cell name-col">
@@ -2429,9 +2418,8 @@ function createFacadeSetRowHTML(setData, index) {
             <div class="facade-set-cell material-col">
                 <select class="material-type-select" data-set-prop="materialType">${materialOptions}</select>
             </div>
-            <div class="facade-set-cell decor-color-col">
-                <button type="button" class="decor-select-btn" title="Выбрать декор или цвет">
-                </button>
+            <div class="facade-set-cell decor-color-col" style="display: flex; align-items: center;">
+                ${decorColorContent}
             </div>
             <div class="facade-set-cell thickness-col">
                 <input type="number" class="thickness-input" value="${currentThickness}"
@@ -2443,13 +2431,8 @@ function createFacadeSetRowHTML(setData, index) {
             </div>
         </div>
     `;
-
-    // --- Расчет displayContent и displayText для кнопки (после генерации основного HTML) ---
-     // Этот код должен быть ВНУТРИ функции, но ПОСЛЕ генерации основного HTML строки
-     // и перед return, чтобы обновить кнопку.
-     // Проще обновить кнопку через JS после вставки строки в DOM.
-     // Поэтому этот блок пока удаляем отсюда. Обновление кнопки будет в updateRowHandlers.
 }
+
 
 // --- Вспомогательные функции для толщины ---
 function getDefaultFacadeThickness(materialType) {
@@ -2520,7 +2503,7 @@ export function addFacadeSetRow() {
     } else { console.error("Контейнер #facadeSetsRowsContainer не найден!"); }
 }
 
-// --- Обновляем updateRowHandlers, чтобы он вызывал обновление кнопки ---
+// --- Обновление обработчиков (updateRowHandlers) ---
 function updateRowHandlers() {
     const rowsContainer = document.getElementById('facadeSetsRowsContainer');
     if (!rowsContainer) return;
@@ -2529,103 +2512,121 @@ function updateRowHandlers() {
         const setId = row.dataset.id;
         const rowIndex = parseInt(row.dataset.index);
 
-        // --- Обновляем кнопку выбора декора/цвета СРАЗУ ---
-        updateDecorColorButton(row); // <--- Вызываем новую функцию
-
-        // --- Имя, Материал, Толщина, Удаление (как раньше) ---
-        const nameInput = row.querySelector('input[type="text"]');
-         if (nameInput) { nameInput.onchange = (e) => { const sd = window.facadeSetsData.find(s=>s.id===setId); if(sd) sd.name = e.target.value; updateDecorColorButton(row);}; } // Обновляем кнопку при смене имени тоже
-        const materialSelect = row.querySelector('.material-type-select');
-         if(materialSelect){ materialSelect.removeEventListener('change', handleMaterialTypeChange); materialSelect.addEventListener('change', (e) => { handleMaterialTypeChange(e); updateDecorColorButton(row); }); } // Обновляем кнопку после смены материала
-        const thicknessInput = row.querySelector('.thickness-input');
-         if(thicknessInput){ thicknessInput.removeEventListener('change', handleThicknessChange); thicknessInput.addEventListener('change', handleThicknessChange); }
-        const deleteButton = row.querySelector('.delete-set-btn');
-         if(deleteButton){ deleteButton.removeEventListener('click', handleDeleteSet); deleteButton.addEventListener('click', handleDeleteSet); }
-
-        // --- Слушатель для кнопки выбора декора ---
+        // --- 1. Обновляем вид кнопки декора (если она есть) ---
         const decorButton = row.querySelector('.decor-select-btn');
         if (decorButton) {
-            decorButton.replaceWith(decorButton.cloneNode(true));
-            row.querySelector('.decor-select-btn').addEventListener('click', () => {
+            updateDecorButtonView(decorButton, row);
+            
+            // Клик по кнопке декора
+            decorButton.onclick = () => {
+                // Вызываем модалку выбора из СПИСКА (для типа фрезеровки или текстуры)
                 openDecorPickerModal(rowIndex, setId);
-            });
+            };
         }
+
+        // --- 2. Обработчик Цвета (если есть) ---
+        const colorInput = row.querySelector('.set-color-input');
+        if (colorInput) {
+            colorInput.oninput = (e) => {
+                const val = e.target.value;
+                const sd = window.facadeSetsData.find(s => s.id === setId);
+                if (sd) sd.color = val;
+            };
+        }
+
+        // --- 3. Остальные стандартные обработчики ---
+        const nameInput = row.querySelector('input[type="text"]');
+        if (nameInput) nameInput.onchange = (e) => { 
+            const sd = window.facadeSetsData.find(s=>s.id===setId); 
+            if(sd) sd.name = e.target.value; 
+        };
+
+        const materialSelect = row.querySelector('.material-type-select');
+        if (materialSelect) {
+            materialSelect.onchange = (e) => handleMaterialTypeChange(e);
+        }
+
+        const thicknessInput = row.querySelector('.thickness-input');
+        if (thicknessInput) thicknessInput.onchange = handleThicknessChange;
+
+        const deleteButton = row.querySelector('.delete-set-btn');
+        if (deleteButton) deleteButton.onclick = handleDeleteSet;
     });
 }
 
+// --- Вспомогательная: Вид кнопки декора ---
+function updateDecorButtonView(btn, row) {
+    const setId = row.dataset.id;
+    const setData = window.facadeSetsData.find(s => s.id === setId);
+    const matInfo = window.facadeOptionsData[setData.materialType];
+
+    let content = '';
+    // Если выбран декор (texture) и в материале есть список декоров
+    if (setData.texture && matInfo.decors) {
+        const decorInfo = matInfo.decors.find(d => d.value === setData.texture);
+        if (decorInfo) {
+            const img = decorInfo.preview || decorInfo.textureImage || decorInfo.previewImage;
+            if (img) {
+                content += `<img src="${img}" class="decor-preview-img">`;
+            } else {
+                // === ВОТ ТУТ ОШИБКА ИЛИ ОТСУТСТВИЕ КОДА ===
+                // Если у декора нет картинки (это униколор из базы, например 'U708 Серый'),
+                // нужно показать его displayColor.
+                const col = decorInfo.displayColor || decorInfo.color || '#ccc';
+                content += `<span class="color-swatch" style="background:${col}"></span>`;
+            }
+            content += `<span class="decor-select-text">${decorInfo.text || decorInfo.name}</span>`;
+        }
+    } else {
+        // Если картинки нет, показываем цветной квадрат (для униколоров из базы)
+        const color = decorInfo.displayColor || decorInfo.color || '#ccc';
+        content += `<span class="color-swatch" style="background:${color}; width:20px;height:20px;display:inline-block;vertical-align:middle;border:1px solid #ddd;margin-right:5px;"></span>`;
+    }
+    
+    if (!content) content = "Выбрать...";
+    btn.innerHTML = content;
+}
+
 // --- Обработчик изменения типа материала ---
-// --- Обновляем handleMaterialTypeChange ---
 function handleMaterialTypeChange(event) {
     const select = event.target;
     const row = select.closest('.facade-set-row');
-    if (!row) return;
-
-    const newMaterialType = select.value;
-    const rowIndex = parseInt(row.dataset.index);
     const setId = row.dataset.id;
-    const loadedFacadeData = window.facadeOptionsData || {};
-    const newMaterialInfo = loadedFacadeData[newMaterialType] || {};
-
-    console.log(`Изменен тип материала для ${setId} на: ${newMaterialType}`);
-
+    const newMaterialType = select.value;
     const setData = window.facadeSetsData.find(set => set.id === setId);
-    if (!setData) { console.error(`Не найдены данные для ID ${setId}`); return; }
+    const newMaterialInfo = window.facadeOptionsData[newMaterialType];
 
-    // Обновляем тип материала в данных
     setData.materialType = newMaterialType;
 
-    // Обновляем Текстуру/Цвет
-    const textureSelectContainer = row.querySelector('.texture-col'); // Находим контейнер селекта
-    const colorInputContainer = row.querySelector('.color-col'); // Находим контейнер цвета
-    const decorButton = row.querySelector('.decor-select-btn'); // Кнопка для вызова модалки
     const useColor = newMaterialInfo.useColorPicker || false;
+    const hasDecors = newMaterialInfo.decors && newMaterialInfo.decors.length > 0;
 
-    // Скрываем/показываем нужные элементы УПРАВЛЕНИЯ (селект или инпут цвета)
-    // Вместо этого мы обновляем кнопку decorButton ниже
-
-    // --- ИСПРАВЛЕНИЕ: Обновление данных setData.texture или setData.color ---
+    // 1. Инициализация ЦВЕТА
     if (useColor) {
-        setData.texture = null; // Сбрасываем текстуру
-        // Устанавливаем цвет по умолчанию, если его нет
-        if (!setData.color) {
-            setData.color = '#ffffff';
-        }
-        console.log(` - Установлен режим выбора цвета. Цвет: ${setData.color}`);
-    } else { // Используем текстуры/декоры
-        setData.color = null; // Сбрасываем цвет
-        // Назначаем ПЕРВЫЙ декор из списка нового материала по умолчанию
-        if (newMaterialInfo.decors && newMaterialInfo.decors.length > 0) {
-            setData.texture = newMaterialInfo.decors[0].value; // <--- Устанавливаем первый декор
-            console.log(` - Установлен режим выбора текстуры. Декор по умолчанию: ${setData.texture}`);
-        } else {
-            setData.texture = ''; // Нет декоров для этого типа
-            console.log(` - Текстуры для типа ${newMaterialType} не найдены.`);
-        }
-    }
-    // --- КОНЕЦ ИСПРАВЛЕНИЯ ---
-
-    // Обновляем поле Толщина
-    const thicknessInput = row.querySelector('.thickness-input');
-    if (thicknessInput) {
-        const defaultThickness = newMaterialInfo.defaultThickness || 18;
-        const isEditable = newMaterialInfo.isThicknessEditable !== undefined ? newMaterialInfo.isThicknessEditable : true;
-        const minThickness = newMaterialInfo.minThickness || 12;
-        const maxThickness = newMaterialInfo.maxThickness || 22;
-
-        thicknessInput.value = defaultThickness;
-        thicknessInput.readOnly = !isEditable;
-        thicknessInput.min = minThickness;
-        thicknessInput.max = maxThickness;
-        thicknessInput.classList.toggle('readonly-style', !isEditable);
-
-        // Обновляем данные толщины
-        setData.thickness = defaultThickness;
+        if (!setData.color) setData.color = '#ffffff';
+    } else {
+        setData.color = null;
     }
 
-    // Обновляем вид кнопки выбора декора/цвета
-    updateDecorColorButton(row); // Вызываем обновление кнопки
+    // 2. Инициализация ДЕКОРА
+    if (hasDecors) {
+        // Если текущий декор не подходит, берем первый из списка
+        const currentValid = newMaterialInfo.decors.some(d => d.value === setData.texture);
+        if (!setData.texture || !currentValid) {
+            setData.texture = newMaterialInfo.decors[0].value;
+        }
+    } else {
+        setData.texture = null;
+    }
+    
+    // 3. Обновление ТОЛЩИНЫ (если нужно)
+    if (newMaterialInfo.defaultThickness) {
+        setData.thickness = newMaterialInfo.defaultThickness;
+    }
 
-    console.log("Обновленные данные setData после смены типа:", setData);
+    // 4. Перерисовка меню
+    // Теперь меню не прыгнет, так как мы добавили проверку isNewMenu
+    showFacadeSetsManager(); 
 }
 
 // --- Обработчик изменения толщины (Пример валидации) ---
@@ -2791,11 +2792,16 @@ function updateFacadeSetSelectorsInCabinets() {
 function openDecorPickerModal(rowIndex, setId) {
     const loadedFacadeData = window.facadeOptionsData || {};
     const setData = window.facadeSetsData.find(set => set.id === setId);
-    if (!setData) { console.error("Не найдены данные для открытия модального окна"); return; }
-
     const materialType = setData.materialType;
     const materialInfo = loadedFacadeData[materialType] || {};
-    const useColor = materialInfo.useColorPicker || false;
+    
+    // ПРОВЕРКА: Если декоров нет, то и выбирать нечего (цвет выбираем в строке)
+    if (!materialInfo.decors || materialInfo.decors.length === 0) {
+        console.warn("Нет декоров для выбора (возможно, только цвет).");
+        // Если это просто крашеный фасад (без фрезеровок), то кнопка может быть не нужна,
+        // или можно показать уведомление.
+        return;
+    }
 
     // --- Создаем или находим модальное окно ---
     let modal = document.getElementById('decorPickerModal');
@@ -2810,80 +2816,53 @@ function openDecorPickerModal(rowIndex, setId) {
     let modalContentHTML = `
         <div class="decor-picker-content">
             <span class="decor-picker-close">×</span>
-            <div class="decor-picker-header">Выбор для: ${materialInfo.name || materialType}</div>
+            <div class="decor-picker-header">Выбор декора: ${materialInfo.name || materialType}</div>
     `;
 
-    if (useColor) {
-        // --- Отображаем Color Picker ---
+    // МЫ ВСЕГДА ПОКАЗЫВАЕМ СПИСОК ДЕКОРОВ, если они есть
+    // Игнорируем useColor, так как цвет выбирается отдельно
+    
+    modalContentHTML += '<div class="decor-grid">';
+    materialInfo.decors.forEach(decor => {
+        let previewElement = '';
+        // Если есть картинка - показываем
+        if (decor.previewImage || decor.preview) {
+            previewElement = `<img src="${decor.previewImage || decor.preview}" alt="${decor.text}" class="decor-preview-img">`;
+        } else {
+            // Если картинки нет (например, это просто форма фрезеровки), можно показать иконку или текст
+            // Или цветной квадрат (но для фрезеровки цвет не важен в этом списке)
+            const color = decor.displayColor || decor.color || '#ccc';
+            previewElement = `<span class="color-swatch" style="background-color:${color}; width:100%; height:80px; display:block;"></span>`;
+        }
+        
         modalContentHTML += `
-            <div class="decor-color-picker-container">
-                <label for="modalColorPicker">Выберите цвет:</label>
-                <input type="color" id="modalColorPicker" value="${setData.color || '#ffffff'}">
+            <div class="decor-grid-item" data-decor-value="${decor.value}" title="${decor.text}">
+                ${previewElement}
+                <span>${decor.text}</span>
             </div>
         `;
-    } else if (materialInfo.decors && materialInfo.decors.length > 0) {
-        // --- Отображаем Сетку Превью ---
-        modalContentHTML += '<div class="decor-grid">';
-        materialInfo.decors.forEach(decor => {
-            let previewElement = '';
-            if (decor.previewImage) {
-                previewElement = `<img src="${decor.previewImage}" alt="${decor.text}" class="decor-preview-img">`;
-            } else {
-                previewElement = `<span class="color-swatch" style="background-color:${decor.displayColor || '#ccc'};"></span>`;
-            }
-            modalContentHTML += `
-                <div class="decor-grid-item" data-decor-value="${decor.value}" title="${decor.text}">
-                    ${previewElement}
-                    <span>${decor.text}</span>
-                </div>
-            `;
-        });
-        modalContentHTML += '</div>'; // end decor-grid
-    } else {
-        // --- Нет ни цвета, ни декоров ---
-        modalContentHTML += `<div style="text-align: center; padding: 20px;">Нет доступных опций для материала "${materialInfo.name || materialType}".</div>`;
-    }
+    });
+    modalContentHTML += '</div>'; // end decor-grid
 
     modalContentHTML += '</div>'; // end decor-picker-content
     modal.innerHTML = modalContentHTML;
 
-    // --- Добавляем Обработчики для Модального Окна ---
+    // --- Обработчики ---
     const closeButton = modal.querySelector('.decor-picker-close');
-    if (closeButton) {
-        closeButton.onclick = () => modal.style.display = 'none';
-    }
+    if (closeButton) closeButton.onclick = () => modal.style.display = 'none';
+    modal.onclick = (event) => { if (event.target === modal) modal.style.display = 'none'; };
 
-    // Закрытие по клику вне окна
-    modal.onclick = (event) => {
-        if (event.target === modal) {
+    // Обработчик клика по ячейке
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const selectedDecorValue = item.dataset.decorValue;
+            console.log(`Выбран декор: ${selectedDecorValue} для ${setId}`);
+            // Обновляем ТОЛЬКО декор (цвет не трогаем)
+            updateFacadeSelection(rowIndex, setId, selectedDecorValue, null); 
             modal.style.display = 'none';
-        }
-    };
+        };
+    });
 
-    if (useColor) {
-        // Обработчик для color picker
-        const colorPicker = modal.querySelector('#modalColorPicker');
-        if (colorPicker) {
-            colorPicker.onchange = (event) => {
-                const newColor = event.target.value;
-                console.log(`Выбран цвет: ${newColor} для ${setId}`);
-                updateFacadeSelection(rowIndex, setId, null, newColor); // Обновляем данные и кнопку
-                modal.style.display = 'none'; // Закрываем окно
-            };
-        }
-    } else {
-        // Обработчик клика по ячейке сетки
-        modal.querySelectorAll('.decor-grid-item').forEach(item => {
-            item.onclick = () => {
-                const selectedDecorValue = item.dataset.decorValue;
-                console.log(`Выбран декор: ${selectedDecorValue} для ${setId}`);
-                updateFacadeSelection(rowIndex, setId, selectedDecorValue, null); // Обновляем данные и кнопку
-                modal.style.display = 'none'; // Закрываем окно
-            };
-        });
-    }
-
-    // --- Показываем модальное окно ---
     modal.style.display = 'block';
 }
 
@@ -3285,65 +3264,203 @@ export function showWallContextMenu(x, y, faceIndex) {
     }
 
     const menu = document.createElement('div');
-    menu.className = 'context-menu'; // Используйте тот же класс, что и для других меню
-    
-    // ==> ДОБАВЛЯЕМ ПРАВИЛЬНОЕ ПОЗИЦИОНИРОВАНИЕ <==
+    menu.className = 'context-menu'; 
     menu.style.position = 'absolute';
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
-    menu.style.zIndex = '1001'; // Убедитесь, что z-index выше других элементов
+    menu.style.zIndex = '1001'; 
+    menu.style.padding = '10px';
+    menu.style.backgroundColor = '#fff';
+    menu.style.border = '1px solid #ccc';
+    menu.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+    menu.style.display = 'flex';
+    menu.style.flexDirection = 'column';
+    menu.style.gap = '8px';
     
+    // Кнопка выбора материала (текстуры)
     const button = document.createElement('button');
     button.textContent = 'Настроить материал';
+    button.style.padding = '5px 10px';
+    button.style.cursor = 'pointer';
     button.onclick = () => {
+        // Вызываем функцию из этого же файла
         openWallMaterialPicker(faceIndex);
-        if (menu.parentNode) { // Проверяем, что меню все еще в DOM
+        
+        if (menu.parentNode) { 
             menu.parentNode.removeChild(menu);
         }
     };
     menu.appendChild(button);
     document.body.appendChild(menu);
 
-    // --- НАЧАЛО: Добавляем Color Picker ---
-
-    // Создаем контейнер для пикера
+    // --- БЛОК ЦВЕТА СТЕНЫ ---
     const colorPickerContainer = document.createElement('div');
-    colorPickerContainer.style.marginTop = '8px';
+    colorPickerContainer.style.borderTop = '1px solid #eee';
+    colorPickerContainer.style.paddingTop = '8px';
+    colorPickerContainer.style.display = 'flex';
+    colorPickerContainer.style.flexDirection = 'column';
+    colorPickerContainer.style.gap = '5px';
+
+    // 1. Определение начального цвета
+    let initColor = '#ffffff';
+    let isCurrentColorReal = false; 
+
+    // Получаем текущий материал
+    let currentMat = getWallMaterial(faceIndex);
+
+    // === ФИКС ДЛЯ ВЫДЕЛЕННОЙ СТЕНЫ ===
+    // Если мы кликнули по выделенной стене, currentMat будет "голубым".
+    // Нам нужен оригинал.
+    if (getOriginalWallMaterial) { // Или через импорт
+        const originalMat = getOriginalWallMaterial();
+        // Проверяем: оригинал существует И выделена именно эта стена
+        // (Хотя, если мы кликнули ПКМ по стене, она обычно выделена).
+        if (originalMat) {
+            currentMat = originalMat;
+        }
+    }
+
+    if (currentMat) {
+        // Приоритет 1: Берем цвет из ID материала (это истинный цвет, даже если стена выделена)
+        if (currentMat.userData && currentMat.userData.materialId && currentMat.userData.materialId.startsWith('color_')) {
+            initColor = '#' + currentMat.userData.materialId.replace('color_', '');
+            isCurrentColorReal = true;
+        } 
+        // Приоритет 2: Если это не цвет по ID, но материал стандартный (и не текстура)
+        // (Осторожно: тут может быть цвет выделения!)
+        else if (currentMat.isMeshStandardMaterial && !currentMat.map) {
+            // Можно добавить проверку: если цвет совпадает с цветом выделения - игнорировать?
+            // Или лучше оставить как есть, надеясь на ID.
+            initColor = '#' + currentMat.color.getHexString();
+            isCurrentColorReal = true;
+        }
+    }
+
+    if (!isCurrentColorReal && window.lastSelectedWallColor) {
+        initColor = window.lastSelectedWallColor;
+    }
+
+    // 2. Ряд с Color Picker
+    const pickerRow = document.createElement('div');
+    pickerRow.style.display = 'flex';
+    pickerRow.style.alignItems = 'center';
+    pickerRow.style.justifyContent = 'space-between';
     
     const label = document.createElement('label');
-    label.textContent = 'Выбрать цвет: ';
+    label.textContent = 'Цвет: ';
     label.style.fontSize = '14px';
 
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
+    colorInput.value = initColor;
+    colorInput.style.cursor = 'pointer';
+    colorInput.style.height = '30px';
+    colorInput.style.width = '50px';
+    colorInput.style.padding = '0';
+    colorInput.style.border = 'none';
+    colorInput.style.backgroundColor = 'transparent';
+
+    pickerRow.appendChild(label);
+    pickerRow.appendChild(colorInput);
+    colorPickerContainer.appendChild(pickerRow);
+
+    // 3. Ряд с инструментами (Hex + Copy + Paste)
+    const toolsRow = document.createElement('div');
+    toolsRow.style.display = 'flex';
+    toolsRow.style.gap = '5px';
+    toolsRow.style.alignItems = 'center';
+
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.value = initColor;
+    hexInput.style.width = '70px';
+    hexInput.style.fontSize = '12px';
+    hexInput.style.padding = '2px 4px';
+    hexInput.style.border = '1px solid #ccc';
+    hexInput.style.borderRadius = '3px';
     
-    // Устанавливаем начальное значение, если у текущего материала есть цвет
-    const currentMaterial = materials[faceIndex]; // Предполагаем доступ к roomManager
-    if (currentMaterial && currentMaterial.isMeshStandardMaterial) {
-        colorInput.value = `#${currentMaterial.color.getHexString()}`;
-    } else {
-        colorInput.value = '#ffffff';
-    }
+    // Кнопка Копировать
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'C';
+    copyBtn.title = 'Копировать код цвета';
+    copyBtn.style.width = '24px';
+    copyBtn.style.height = '24px';
+    copyBtn.style.padding = '0';
+    copyBtn.style.cursor = 'pointer';
+    copyBtn.onclick = () => {
+        navigator.clipboard.writeText(hexInput.value)
+            .then(() => {
+                copyBtn.textContent = 'ok';
+                setTimeout(() => copyBtn.textContent = 'C', 1000);
+            })
+            .catch(err => console.error('Ошибка копирования:', err));
+    };
 
-    // Обработчик, который срабатывает при каждом изменении цвета
-    colorInput.addEventListener('input', (event) => {
-        const newColor = event.target.value;
-        
-        // Создаем "виртуальный" materialId для цвета
-        const colorMaterialId = `color_${newColor.replace('#', '')}`;
-        
-        // Вызываем нашу функцию, но вместо поиска в JSON,
-        // мы будем обрабатывать этот ID по-особому.
-        applyMaterialToWall(faceIndex, colorMaterialId);
-    });
+    // Кнопка Вставить
+    const pasteBtn = document.createElement('button');
+    pasteBtn.textContent = 'V';
+    pasteBtn.title = 'Вставить код цвета';
+    pasteBtn.style.width = '24px';
+    pasteBtn.style.height = '24px';
+    pasteBtn.style.padding = '0';
+    pasteBtn.style.cursor = 'pointer';
+    pasteBtn.onclick = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            let val = text.trim();
+            // Добавляем # если нет, но есть 6 hex цифр
+            if (!val.startsWith('#') && /^[0-9A-F]{6}$/i.test(val)) val = '#' + val;
+            
+            if (/^#[0-9A-F]{6}$/i.test(val)) {
+                updateColor(val);
+            } else {
+                alert('В буфере обмена нет корректного кода цвета (HEX)');
+            }
+        } catch (err) {
+            console.error('Ошибка вставки:', err);
+            const manual = prompt("Введите код цвета (#RRGGBB):", "");
+            if (manual && /^#[0-9A-F]{6}$/i.test(manual)) updateColor(manual);
+        }
+    };
 
-    label.appendChild(colorInput);
-    colorPickerContainer.appendChild(label);
+    toolsRow.appendChild(hexInput);
+    toolsRow.appendChild(copyBtn);
+    toolsRow.appendChild(pasteBtn);
+    colorPickerContainer.appendChild(toolsRow);
+
     menu.appendChild(colorPickerContainer);
 
-    // --- КОНЕЦ: Добавляем Color Picker ---
-    
-    // Добавим обработчик для закрытия меню по клику в стороне
+    // --- ОБЩАЯ ЛОГИКА ОБНОВЛЕНИЯ ---
+    function updateColor(hexValue) {
+        colorInput.value = hexValue;
+        hexInput.value = hexValue;
+        
+        const colorId = `color_${hexValue.replace('#', '')}`;
+        window.lastSelectedWallColor = hexValue; // Используем window только для хранения сессии
+        
+        // Применяем через импортированную функцию
+        applyMaterialToWall(faceIndex, colorId);
+    }
+
+    // Слушатель изменения Пикера (Live update)
+    colorInput.addEventListener('input', (e) => {
+        hexInput.value = e.target.value;
+        updateColor(e.target.value);
+    });
+
+    // Слушатель изменения Текстового поля
+    hexInput.addEventListener('change', (e) => {
+        let val = e.target.value;
+        if (!val.startsWith('#')) val = '#' + val;
+        if (/^#[0-9A-F]{6}$/i.test(val)) {
+            updateColor(val);
+        } else {
+            // Возвращаем старое значение
+            hexInput.value = colorInput.value;
+        }
+    });
+
+    // --- Закрытие меню ---
     const closeMenuHandler = (event) => {
         if (!menu.contains(event.target)) {
             if (menu.parentNode) {
@@ -3352,7 +3469,6 @@ export function showWallContextMenu(x, y, faceIndex) {
             document.removeEventListener('click', closeMenuHandler, true);
         }
     };
-    // Используем `setTimeout`, чтобы этот обработчик не сработал на тот же клик, что его создал
     setTimeout(() => document.addEventListener('click', closeMenuHandler, true), 0);
 }
 
@@ -3567,11 +3683,29 @@ export function showFloorSettingsMenu(x, y) {
     const initialFloorObject = window.floorObject;
     // Эта переменная будет хранить временный объект для предпросмотра.
     let previewFloorObject = null;
-
-    const currentSettings = initialFloorObject?.userData.settings || {
-        plankWidth: 200, plankLength: 1200, plankHeight: 2, gap: 1, offset: 20, direction: 0,
+    let currentSettings = {
+        plankWidth: 200,
+        plankLength: 1200,
+        plankHeight: 2, // Или 10
+        gap: 2,
+        offset: 20,
+        direction: 0,
         materialId: null
     };
+
+    if (window.floorObject && window.floorObject.userData) {
+        // ИЩЕМ В ПРАВИЛЬНОМ МЕСТЕ (floorParams)
+        const savedParams = window.floorObject.userData.floorParams;
+        if (savedParams) {
+            currentSettings = { ...currentSettings, ...savedParams };
+        }
+        
+        // Материал лежит отдельно или внутри params?
+        // В floorGenerator мы писали: floorMesh.userData.materialId = materialId;
+        if (window.floorObject.userData.materialId) {
+            currentSettings.materialId = window.floorObject.userData.materialId;
+        }
+    }
 
     menu.innerHTML = `
         <h3>Настройки напольного покрытия</h3>
@@ -3650,9 +3784,6 @@ export function showFloorSettingsMenu(x, y) {
             if(firstInput.select) firstInput.select();
         }
     });
-
-    
-
 
     // --- ОБРАБОТЧИКИ КНОПОК И ПОЛЕЙ ---
     if (initialFloorObject) {

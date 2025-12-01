@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import * as MaterialManager from './MaterialManager.js';
+import { createMilledFacade } from './FacadeBuilder.js';
 
 // Временно копируем фабрики сюда. Позже мы удалим их из main.js
 // и будем использовать только эти. Убедитесь, что вы скопировали
@@ -570,10 +571,6 @@ export function createDetailedUpperSwingGeometry(cabinetData, kitchenGlobalParam
     console.log(`--- Начало детализации swingUpper: ${width*1000}x${height*1000}x${depth*1000} ---`);
 
     // ==================================================================
-    // ЗДЕСЬ МЫ БУДЕМ ПОЭТАПНО ДОБАВЛЯТЬ КОД ДЛЯ СОЗДАНИЯ ДЕТАЛЕЙ
-    // ==================================================================
-
-    // ==================================================================
     // 1. Боковины (Левая и Правая)
     // ==================================================================
 
@@ -988,43 +985,50 @@ export function createDetailedUpperSwingGeometry(cabinetData, kitchenGlobalParam
     // ==================================================================
     // 6. Фасады
     // ==================================================================
+
     const doorType = cabinetData.doorType || 'double';
 
     if (doorType !== 'none') {
-        // 6.1. Расчет размеров и параметров
-        const doorOffsetTopMm = cabinetData.doorOffsetTop ?? 0;
-        const doorOffsetBottomMm = cabinetData.doorOffsetBottom ?? 0;
-        const facadeGapMm = (cabinetData.facadeGap ?? 3); // Глобальный зазор, если есть
-
-        const doorOffsetTopM = doorOffsetTopMm / 1000;
-        const doorOffsetBottomM = doorOffsetBottomMm / 1000;
+        const doorOffsetTopM = (cabinetData.doorOffsetTop ?? 0) / 1000;
+        const doorOffsetBottomM = (cabinetData.doorOffsetBottom ?? 0) / 1000;
         const facadeGapM = (cabinetData.facadeGap ?? 3 / 1000);
 
-        // --- Расчет высоты и Y-позиции ---
         const facadeHeight = height - doorOffsetTopM - doorOffsetBottomM;
-
-        // Центр фасада по Y смещается относительно центра шкафа
-        // Смещение = (отступ снизу - отступ сверху) / 2
-        // Пример: отступ сверху 10, снизу 0. Смещение = (0 - 10)/2 = -5. Центр уедет вниз.
-        // Пример: отступ сверху 0, снизу 10. Смещение = (10 - 0)/2 = +5. Центр уедет вверх.
         const facadeCenterY = (doorOffsetBottomM - doorOffsetTopM) / 2;
         
-        // --- Получаем материал и толщину фасада ---
+        // 1. Базовый материал (из набора) - нужен для fallback и спейсеров
         const facadeSet = window.facadeSetsData.find(set => set.id === cabinetData.facadeSet);
-        const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+        const { material: baseMat, thickness: baseTh } = MaterialManager.getMaterial(facadeSet);
 
-        // --- Подготовка массива с данными для создания фасадов ---
+        // 2. Определение стратегии построения (Override vs Set)
+        let buildStrategy = 'flat'; // 'flat', 'milled', 'aluminum'
+        let profileData = null;
+        let finalMaterial = baseMat;
+        let finalThickness = baseTh;
+
+        // А. Проверяем локальный Override (если есть поле в cabinetData)
+        if (cabinetData.facadeOverride && cabinetData.facadeOverride.startsWith('aluminum')) {
+            buildStrategy = 'aluminum';
+            // Тут можно определить тип профиля (Z1, Z9...) из строки override
+        } 
+        // Б. Если нет Override, смотрим на набор
+        else {
+            // Ищем декор в mdf_milled
+            if (window.facadeOptionsData['mdf_milled']) {
+                 const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+                 if (decor && decor.profileType === '9slice') {
+                     buildStrategy = 'milled';
+                     profileData = decor;
+                 }
+            }
+        }
+
+        // Подготовка списка фасадов (размеры)
         const facadesToCreate = [];
         if (doorType === 'left' || doorType === 'right') {
-            // --- Один фасад ---
-            // Зазор по бокам = по половине глобального зазора с каждой стороны
             const facadeWidth = width - facadeGapM;
-            if (facadeWidth > 0 && facadeHeight > 0) {
-                facadesToCreate.push({ width: facadeWidth, xOffset: 0 });
-            }
+            if (facadeWidth > 0 && facadeHeight > 0) facadesToCreate.push({ width: facadeWidth, xOffset: 0 });
         } else if (doorType === 'double') {
-            // --- Два фасада ---
-            // Зазор по бокам и один зазор посередине
             const facadeWidth = (width - facadeGapM * 2) / 2;
             if (facadeWidth > 0 && facadeHeight > 0) {
                 const xOffset = facadeWidth / 2 + facadeGapM / 2;
@@ -1033,48 +1037,58 @@ export function createDetailedUpperSwingGeometry(cabinetData, kitchenGlobalParam
             }
         }
 
-        // 6.2. Создание и позиционирование деталей в цикле
+        // Создание
         facadesToCreate.forEach((facadeInfo, index) => {
-            // --- ИЗМЕНЕНИЕ ЛОГИКИ РАБОТЫ С МАТЕРИАЛОМ ---
+            // Центр по Z зависит от толщины (которая может меняться для разных типов)
+            // Для фрезеровки и плоского берем из материала. Для алюминия - своя.
             
-            // 1. Получаем базовый материал и толщину
-            const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+            const container = new THREE.Group();
+            container.userData.cabinetUUID = cabinetUUID;
+            
+            if (buildStrategy === 'milled') {
+                // === ФРЕЗЕРОВКА ===
+                const z = depth / 2 + finalThickness / 2;
+                container.position.set(facadeInfo.xOffset, facadeCenterY, z);
+                group.add(container);
 
-            // 2. Создаем меш с этим базовым материалом
-            const facadeMesh = createPanel(
-                facadeInfo.width, facadeHeight, facadeThicknessM,
-                baseFacadeMaterial, 'frontal', `facade_${doorType}_${index}`
-            );
+                createMilledFacade(facadeInfo.width, facadeHeight, profileData, finalMaterial.clone())
+                    .then(mesh => {
+                        container.add(mesh);
+                        mesh.updateMatrixWorld();
+                    })
+                    .catch(e => console.error(e));
 
-            if (facadeMesh) {
-                // 3. Теперь работаем с материалом КОНКРЕТНОГО меша.
-                // createPanel уже склонировал материал, так что мы не влияем на другие объекты.
-                const actualFacadeMaterial = facadeMesh.material; 
-
-                // 4. Применяем трансформацию текстуры, если она есть
-                if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
-                    MaterialManager.applyTextureTransform(
-                        actualFacadeMaterial,
-                        cabinetData.textureDirection || 'vertical',
-                        facadeInfo.width,
-                        facadeHeight
-                    );
-                    
-                    // 5. Присваиваем НОВУЮ, трансформированную текстуру свойству map
-                    //actualFacadeMaterial.map = transformedTexture;
-                    //actualFacadeMaterial.needsUpdate = true; // Очень важно!
-                }
-
-                // Позиционируем меш
-                const facadeCenterZ = depth / 2 + facadeThicknessM / 2;
-                facadeMesh.position.set(facadeInfo.xOffset, facadeCenterY, facadeCenterZ);
-                facadeMesh.userData.cabinetUUID = cabinetUUID;
+            } else if (buildStrategy === 'aluminum') {
+                // === АЛЮМИНИЙ ===
+                // Вызываем твои функции createZ...
+                // const mesh = createZ1FrameFacade(...)
+                // container.add(mesh)
+                // group.add(container)
                 
-                group.add(facadeMesh);
+            } else {
+                // === ПЛОСКИЙ (Default) ===
+                const z = depth / 2 + finalThickness / 2;
+                
+                // Пересоздаем материал для клонирования текстур
+                const { material: mat } = MaterialManager.getMaterial(facadeSet);
+                
+                const mesh = createPanel(
+                    facadeInfo.width, facadeHeight, finalThickness,
+                    mat, 'frontal', `facade_${doorType}_${index}`
+                );
+
+                if (mesh) {
+                    if (mesh.material.map) {
+                        MaterialManager.applyTextureTransform(mesh.material, cabinetData.textureDirection || 'vertical', facadeInfo.width, facadeHeight);
+                    }
+                    mesh.position.set(facadeInfo.xOffset, facadeCenterY, z);
+                    mesh.userData.cabinetUUID = cabinetUUID;
+                    group.add(mesh);
+                }
             }
         });
         
-        console.log(` - Фасады созданы: ${facadesToCreate.length} шт.`);
+        console.log(` - Фасады созданы: ${facadesToCreate.length} шт. (${buildStrategy})`);
     }
 
     // ==================================================================
@@ -1302,53 +1316,82 @@ export function createDetailedUpperSwingGeometry(cabinetData, kitchenGlobalParam
         const spacerFacadeHeight = height - doorOffsetTopM - doorOffsetBottomM;
         const spacerWidthMm = cabinetData.spacerWidth || 60;
         const spacerFacadeWidth = (spacerWidthMm - 1) / 1000;
-        
+
         const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
         const spacerFacadeDepth = facadeThicknessM;
 
-        // 7.2.2. Создание детали
-        const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
-
-        if (spacerFacade) {
-            // 7.2.3. Позиционирование
-            let facadeCenterX;
-            const oneMm = 1 / 1000;
-            if (spacersType.includes('left')) {
-                // правая грань = левая грань шкафа - 1мм
-                const requiredRightFaceX = -width / 2 - oneMm;
-                facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
-            } else { // Правый
-                // левая грань = правая грань шкафа + 1мм
-                const requiredLeftFaceX = width / 2 + oneMm;
-                facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
-            }
-
-            // По Y: нижняя грань = нижняя грань шкафа + отступ снизу
-            const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
-            const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
-            
-            // По Z: задняя грань = передняя грань шкафа
-            const requiredRearFaceZ = depth / 2;
-            const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
-            
-            spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
-            spacerFacade.userData.cabinetUUID = cabinetUUID;
-
-            // 7.2.4. Применяем трансформацию текстуры
-            const facadeMaterial = spacerFacade.material;
-            if (facadeMaterial.map && facadeMaterial.map.isTexture) {
-                MaterialManager.applyTextureTransform(
-                    facadeMaterial,
-                    cabinetData.textureDirection || 'vertical',
-                    spacerFacadeWidth,
-                    spacerFacadeHeight
-                );
-            }
-
-            group.add(spacerFacade);
-        }
+        // 7.2.2. Определение стратегии (Фрезеровка или Плоский)
+        let isMilled = false;
+        let profileData = null;
         
-        console.log(` - Фасадная часть для широкого спейсера создана.`);
+        if (window.facadeOptionsData['mdf_milled']) {
+             const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+             if (decor && decor.profileType === '9slice') {
+                 isMilled = true;
+                 profileData = decor;
+             }
+        }
+
+        // 7.2.3. Позиционирование (общие координаты центра)
+        let facadeCenterX;
+        const oneMm = 1 / 1000;
+        if (spacersType.includes('left')) {
+            // правая грань = левая грань шкафа - 1мм
+            const requiredRightFaceX = -width / 2 - oneMm;
+            facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
+        } else { // Правый
+            // левая грань = правая грань шкафа + 1мм
+            const requiredLeftFaceX = width / 2 + oneMm;
+            facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
+        }
+
+        const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
+        const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
+        
+        const requiredRearFaceZ = depth / 2;
+        const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
+
+
+        // 7.2.4. Создание
+        if (isMilled) {
+            // === ВАРИАНТ 1: ФРЕЗЕРОВКА ===
+            // Создаем контейнер
+            const spacerContainer = new THREE.Group();
+            spacerContainer.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+            spacerContainer.userData.cabinetUUID = cabinetUUID;
+            group.add(spacerContainer);
+
+            // Запускаем билдер
+            // FacadeBuilder сам решит (LOD), делать ли сложный профиль или заглушку,
+            // если спейсер слишком узкий.
+            createMilledFacade(spacerFacadeWidth, spacerFacadeHeight, profileData, baseFacadeMaterial.clone())
+                .then(mesh => {
+                    spacerContainer.add(mesh);
+                    mesh.updateMatrixWorld();
+                })
+                .catch(e => console.error("Ошибка спейсера:", e));
+
+        } else {
+            // === ВАРИАНТ 2: ПЛОСКИЙ ===
+            const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
+
+            if (spacerFacade) {
+                spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+                spacerFacade.userData.cabinetUUID = cabinetUUID;
+
+                const facadeMaterial = spacerFacade.material;
+                if (facadeMaterial.map && facadeMaterial.map.isTexture) {
+                    MaterialManager.applyTextureTransform(
+                        facadeMaterial,
+                        cabinetData.textureDirection || 'vertical',
+                        spacerFacadeWidth,
+                        spacerFacadeHeight
+                    );
+                }
+                group.add(spacerFacade);
+            }
+        }
+        console.log(` - Фасадная часть для широкого спейсера создана (${isMilled ? 'Milled' : 'Flat'}).`);
     }
 
     // ==================================================================
@@ -1999,101 +2042,119 @@ export function createDetailedLiftUpperGeometry(cabinetData, kitchenGlobalParams
     }
 
 
-    // // ==================================================================
-    // // 5. Фасады (для подъемника)
-    // // ==================================================================
-    //const construction = cabinetData.liftDoorConstruction || 'single';
-    const isDoubleDoor = construction.includes('double');
+    // ==================================================================
+    // 5. Фасады (для подъемника)
+    // ==================================================================
 
-    // 5.1. Расчет общих параметров
+    // 5.1. Подготовка общих параметров
+    // const construction = cabinetData.liftDoorConstruction || 'single'; (уже определено выше)
+    const isDoubleDoor = construction.includes('double');
     const facadeGapM = cabinetData.facadeGap ?? (3 / 1000);
     const doorOffsetTopM = (cabinetData.doorOffsetTop ?? 0) / 1000;
     const doorOffsetBottomM = (cabinetData.doorOffsetBottom ?? 0) / 1000;
-
     const facadeWidth = width - facadeGapM;
-    
+
+    // 1. Базовый материал (из набора)
     //const facadeSet = window.facadeSetsData.find(set => set.id === cabinetData.facadeSet);
-    const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+    const { material: baseFacadeMaterial, thickness: baseTh } = MaterialManager.getMaterial(facadeSet);
 
-    // --- 5.2. Создание Верхнего фасада ---
-    const topFacadeHeightM = (cabinetData.liftTopFacadeHeight ?? 240) / 1000;
+    // 2. Определение стратегии
+    let buildStrategy = 'flat';
+    let profileData = null;
+    let finalMaterial = baseFacadeMaterial;
+    let finalThickness = baseTh;
 
-    if (facadeWidth > 0 && topFacadeHeightM > 0) {
-        const topFacade = createPanel(facadeWidth, topFacadeHeightM, facadeThicknessM, baseFacadeMaterial.clone(), 'frontal', 'topFacade_lift');
-        
-        if (topFacade) {
-            // Позиционирование
-            const facadeCenterX = 0; // По центру
-            
-            // Верхняя грань = верх шкафа - отступ
-            const requiredTopFaceY = height / 2 - doorOffsetTopM;
-            const facadeCenterY = requiredTopFaceY - topFacadeHeightM / 2;
-
-            const facadeCenterZ = depth / 2 + facadeThicknessM / 2;
-
-            topFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
-            topFacade.userData.cabinetUUID = cabinetUUID;
-            
-            MaterialManager.applyTexture(topFacade, cabinetData.textureDirection, 'frontal');
-
-
-            // createPanel уже склонировал материал, так что мы не влияем на другие объекты.
-            const actualFacadeMaterial = topFacade.material; 
-
-            // 4. Применяем трансформацию текстуры, если она есть
-            if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
-                MaterialManager.applyTextureTransform(
-                    actualFacadeMaterial,
-                    cabinetData.textureDirection || 'vertical',
-                    facadeWidth,
-                    topFacadeHeightM
-                );
-            }
-
-            group.add(topFacade);
-            console.log(` - Верхний фасад (подъемник) создан.`);
-        }
+    // А. Override (локальный выбор алюминия)
+    if (cabinetData.facadeOverride && cabinetData.facadeOverride.startsWith('aluminum')) {
+        buildStrategy = 'aluminum';
+        // finalThickness = ... (для алюминия своя толщина)
+    } 
+    // Б. Набор (фрезеровка)
+    else if (window.facadeOptionsData['mdf_milled']) {
+         const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+         if (decor && decor.profileType === '9slice') {
+             buildStrategy = 'milled';
+             profileData = decor;
+         }
     }
-    
-    // --- 5.3. Создание Нижнего фасада (если нужно) ---
+
+    // 3. Подготовка списка фасадов (размеры и смещения)
+    const facadesToCreate = [];
+
+    // Верхний фасад
+    const topFacadeHeightM = (cabinetData.liftTopFacadeHeight ?? 240) / 1000;
+    if (facadeWidth > 0 && topFacadeHeightM > 0) {
+        // Позиция Y: Верхняя грань = H/2 - OffsetTop. Центр = Верх - H/2.
+        const facadeCenterY = (height / 2 - doorOffsetTopM) - topFacadeHeightM / 2;
+        facadesToCreate.push({ 
+            height: topFacadeHeightM, 
+            y: facadeCenterY, 
+            name: 'topFacade_lift' 
+        });
+    }
+
+    // Нижний фасад
     if (isDoubleDoor) {
-        // Рассчитываем высоту нижнего фасада
         const totalFacadeSpace = height - doorOffsetTopM - doorOffsetBottomM;
         const bottomFacadeHeightM = totalFacadeSpace - topFacadeHeightM - facadeGapM;
-        
-        if (facadeWidth > 0 && bottomFacadeHeightM > 0.05) { // Минимальная высота 50мм
-            const bottomFacade = createPanel(facadeWidth, bottomFacadeHeightM, facadeThicknessM, baseFacadeMaterial.clone(), 'frontal', 'bottomFacade_lift');
-            
-            if (bottomFacade) {
-                // Позиционирование
-                const facadeCenterX = 0;
-
-                // Нижняя грань = низ шкафа + отступ
-                const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
-                const facadeCenterY = requiredBottomFaceY + bottomFacadeHeightM / 2;
-
-                const facadeCenterZ = depth / 2 + facadeThicknessM / 2;
-
-                bottomFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
-                bottomFacade.userData.cabinetUUID = cabinetUUID;
-
-                const actualFacadeMaterial = bottomFacade.material; 
-
-                // 4. Применяем трансформацию текстуры, если она есть
-                if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
-                    MaterialManager.applyTextureTransform(
-                        actualFacadeMaterial,
-                        cabinetData.textureDirection || 'vertical',
-                        facadeWidth,
-                        bottomFacadeHeightM
-                    );
-                }
-
-                group.add(bottomFacade);
-                console.log(` - Нижний фасад (подъемник) создан.`);
-            }
+        if (facadeWidth > 0 && bottomFacadeHeightM > 0.05) {
+            // Позиция Y: Нижняя грань = -H/2 + OffsetBot. Центр = Низ + H/2.
+            const facadeCenterY = (-height / 2 + doorOffsetBottomM) + bottomFacadeHeightM / 2;
+            facadesToCreate.push({ 
+                height: bottomFacadeHeightM, 
+                y: facadeCenterY, 
+                name: 'bottomFacade_lift' 
+            });
         }
     }
+
+    // 4. Генерация в цикле
+    facadesToCreate.forEach(facadeInfo => {
+        const container = new THREE.Group();
+        container.userData.cabinetUUID = cabinetUUID;
+        
+        if (buildStrategy === 'milled') {
+            // === ФРЕЗЕРОВКА ===
+            const z = depth / 2 + finalThickness / 2;
+            container.position.set(0, facadeInfo.y, z); // X=0 (центр)
+            group.add(container);
+
+            createMilledFacade(facadeWidth, facadeInfo.height, profileData, finalMaterial.clone())
+                .then(mesh => {
+                    container.add(mesh);
+                    mesh.updateMatrixWorld();
+                })
+                .catch(e => console.error(e));
+
+        } else if (buildStrategy === 'aluminum') {
+            // === АЛЮМИНИЙ ===
+            // const mesh = createZ1FrameFacade(facadeWidth, facadeInfo.height, ...);
+            // container.add(mesh);
+            // group.add(container);
+
+        } else {
+            // === ПЛОСКИЙ ===
+            const z = depth / 2 + finalThickness / 2;
+            const mesh = createPanel(
+                facadeWidth, facadeInfo.height, finalThickness,
+                finalMaterial.clone(), 'frontal', facadeInfo.name
+            );
+
+            if (mesh) {
+                if (mesh.material.map) {
+                    MaterialManager.applyTextureTransform(
+                        mesh.material, cabinetData.textureDirection || 'vertical',
+                        facadeWidth, facadeInfo.height
+                    );
+                }
+                mesh.position.set(0, facadeInfo.y, z);
+                mesh.userData.cabinetUUID = cabinetUUID;
+                group.add(mesh);
+            }
+        }
+    });
+    
+    console.log(` - Фасады подъемника созданы: ${facadesToCreate.length} шт. (${buildStrategy})`);
 
     // ==================================================================
     // 7. Спейсеры
@@ -2322,55 +2383,82 @@ export function createDetailedLiftUpperGeometry(cabinetData, kitchenGlobalParams
         const spacerFacadeHeight = height - doorOffsetTopM - doorOffsetBottomM;
         const spacerWidthMm = cabinetData.spacerWidth || 60;
         const spacerFacadeWidth = (spacerWidthMm - 1) / 1000;
-        
+
         const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
         const spacerFacadeDepth = facadeThicknessM;
 
-        // 7.2.2. Создание детали
-        const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
-
-        if (spacerFacade) {
-            // 7.2.3. Позиционирование
-            let facadeCenterX;
-            const oneMm = 1 / 1000;
-            if (spacersType.includes('left')) {
-                // правая грань = левая грань шкафа - 1мм
-                const requiredRightFaceX = -width / 2 - oneMm;
-                facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
-            } else { // Правый
-                // левая грань = правая грань шкафа + 1мм
-                const requiredLeftFaceX = width / 2 + oneMm;
-                facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
-            }
-
-            // По Y: нижняя грань = нижняя грань шкафа + отступ снизу
-            const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
-            const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
-            
-            // По Z: задняя грань = передняя грань шкафа
-            const requiredRearFaceZ = depth / 2;
-            const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
-            
-            spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
-            spacerFacade.userData.cabinetUUID = cabinetUUID;
-
-            // 7.2.4. Применяем трансформацию текстуры
-            const facadeMaterial = spacerFacade.material;
-            if (facadeMaterial.map && facadeMaterial.map.isTexture) {
-                const transformedTexture = MaterialManager.applyTextureTransform(
-                    facadeMaterial.map,
-                    cabinetData.textureDirection || 'vertical',
-                    spacerFacadeWidth,
-                    spacerFacadeHeight
-                );
-                facadeMaterial.map = transformedTexture;
-                facadeMaterial.needsUpdate = true;
-            }
-
-            group.add(spacerFacade);
-        }
+        // 7.2.2. Определение стратегии (Фрезеровка или Плоский)
+        let isMilled = false;
+        let profileData = null;
         
-        console.log(` - Фасадная часть для широкого спейсера создана.`);
+        if (window.facadeOptionsData['mdf_milled']) {
+             const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+             if (decor && decor.profileType === '9slice') {
+                 isMilled = true;
+                 profileData = decor;
+             }
+        }
+
+        // 7.2.3. Позиционирование (общие координаты центра)
+        let facadeCenterX;
+        const oneMm = 1 / 1000;
+        if (spacersType.includes('left')) {
+            // правая грань = левая грань шкафа - 1мм
+            const requiredRightFaceX = -width / 2 - oneMm;
+            facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
+        } else { // Правый
+            // левая грань = правая грань шкафа + 1мм
+            const requiredLeftFaceX = width / 2 + oneMm;
+            facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
+        }
+
+        const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
+        const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
+        
+        const requiredRearFaceZ = depth / 2;
+        const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
+
+
+        // 7.2.4. Создание
+        if (isMilled) {
+            // === ВАРИАНТ 1: ФРЕЗЕРОВКА ===
+            // Создаем контейнер
+            const spacerContainer = new THREE.Group();
+            spacerContainer.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+            spacerContainer.userData.cabinetUUID = cabinetUUID;
+            group.add(spacerContainer);
+
+            // Запускаем билдер
+            // FacadeBuilder сам решит (LOD), делать ли сложный профиль или заглушку,
+            // если спейсер слишком узкий.
+            createMilledFacade(spacerFacadeWidth, spacerFacadeHeight, profileData, baseFacadeMaterial.clone())
+                .then(mesh => {
+                    spacerContainer.add(mesh);
+                    mesh.updateMatrixWorld();
+                })
+                .catch(e => console.error("Ошибка спейсера:", e));
+
+        } else {
+            // === ВАРИАНТ 2: ПЛОСКИЙ ===
+            const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
+
+            if (spacerFacade) {
+                spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+                spacerFacade.userData.cabinetUUID = cabinetUUID;
+
+                const facadeMaterial = spacerFacade.material;
+                if (facadeMaterial.map && facadeMaterial.map.isTexture) {
+                    MaterialManager.applyTextureTransform(
+                        facadeMaterial,
+                        cabinetData.textureDirection || 'vertical',
+                        spacerFacadeWidth,
+                        spacerFacadeHeight
+                    );
+                }
+                group.add(spacerFacade);
+            }
+        }
+        console.log(` - Фасадная часть для широкого спейсера создана (${isMilled ? 'Milled' : 'Flat'}).`);
     }
 
     // ==================================================================
@@ -3195,48 +3283,53 @@ export function createDetailedSwingHoodGeometry(cabinetData, kitchenGlobalParams
         }
     }
 
-
-
     // ==================================================================
     // 6. Фасады
     // ==================================================================
+
     const doorType = cabinetData.doorType || 'double';
 
     if (doorType !== 'none') {
-        // 6.1. Расчет размеров и параметров
-        const doorOffsetTopMm = cabinetData.doorOffsetTop ?? 0;
-        const doorOffsetBottomMm = cabinetData.doorOffsetBottom ?? 0;
-        const facadeGapMm = (cabinetData.facadeGap ?? 3); // Глобальный зазор, если есть
-
-        const doorOffsetTopM = doorOffsetTopMm / 1000;
-        const doorOffsetBottomM = doorOffsetBottomMm / 1000;
+        const doorOffsetTopM = (cabinetData.doorOffsetTop ?? 0) / 1000;
+        const doorOffsetBottomM = (cabinetData.doorOffsetBottom ?? 0) / 1000;
         const facadeGapM = (cabinetData.facadeGap ?? 3 / 1000);
 
-        // --- Расчет высоты и Y-позиции ---
         const facadeHeight = height - doorOffsetTopM - doorOffsetBottomM;
-
-        // Центр фасада по Y смещается относительно центра шкафа
-        // Смещение = (отступ снизу - отступ сверху) / 2
-        // Пример: отступ сверху 10, снизу 0. Смещение = (0 - 10)/2 = -5. Центр уедет вниз.
-        // Пример: отступ сверху 0, снизу 10. Смещение = (10 - 0)/2 = +5. Центр уедет вверх.
         const facadeCenterY = (doorOffsetBottomM - doorOffsetTopM) / 2;
         
-        // --- Получаем материал и толщину фасада ---
+        // 1. Базовый материал (из набора) - нужен для fallback и спейсеров
         const facadeSet = window.facadeSetsData.find(set => set.id === cabinetData.facadeSet);
-        const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+        const { material: baseMat, thickness: baseTh } = MaterialManager.getMaterial(facadeSet);
 
-        // --- Подготовка массива с данными для создания фасадов ---
+        // 2. Определение стратегии построения (Override vs Set)
+        let buildStrategy = 'flat'; // 'flat', 'milled', 'aluminum'
+        let profileData = null;
+        let finalMaterial = baseMat;
+        let finalThickness = baseTh;
+
+        // А. Проверяем локальный Override (если есть поле в cabinetData)
+        if (cabinetData.facadeOverride && cabinetData.facadeOverride.startsWith('aluminum')) {
+            buildStrategy = 'aluminum';
+            // Тут можно определить тип профиля (Z1, Z9...) из строки override
+        } 
+        // Б. Если нет Override, смотрим на набор
+        else {
+            // Ищем декор в mdf_milled
+            if (window.facadeOptionsData['mdf_milled']) {
+                 const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+                 if (decor && decor.profileType === '9slice') {
+                     buildStrategy = 'milled';
+                     profileData = decor;
+                 }
+            }
+        }
+
+        // Подготовка списка фасадов (размеры)
         const facadesToCreate = [];
         if (doorType === 'left' || doorType === 'right') {
-            // --- Один фасад ---
-            // Зазор по бокам = по половине глобального зазора с каждой стороны
             const facadeWidth = width - facadeGapM;
-            if (facadeWidth > 0 && facadeHeight > 0) {
-                facadesToCreate.push({ width: facadeWidth, xOffset: 0 });
-            }
+            if (facadeWidth > 0 && facadeHeight > 0) facadesToCreate.push({ width: facadeWidth, xOffset: 0 });
         } else if (doorType === 'double') {
-            // --- Два фасада ---
-            // Зазор по бокам и один зазор посередине
             const facadeWidth = (width - facadeGapM * 2) / 2;
             if (facadeWidth > 0 && facadeHeight > 0) {
                 const xOffset = facadeWidth / 2 + facadeGapM / 2;
@@ -3245,48 +3338,58 @@ export function createDetailedSwingHoodGeometry(cabinetData, kitchenGlobalParams
             }
         }
 
-        // 6.2. Создание и позиционирование деталей в цикле
+        // Создание
         facadesToCreate.forEach((facadeInfo, index) => {
-            // --- ИЗМЕНЕНИЕ ЛОГИКИ РАБОТЫ С МАТЕРИАЛОМ ---
+            // Центр по Z зависит от толщины (которая может меняться для разных типов)
+            // Для фрезеровки и плоского берем из материала. Для алюминия - своя.
             
-            // 1. Получаем базовый материал и толщину
-            const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
+            const container = new THREE.Group();
+            container.userData.cabinetUUID = cabinetUUID;
+            
+            if (buildStrategy === 'milled') {
+                // === ФРЕЗЕРОВКА ===
+                const z = depth / 2 + finalThickness / 2;
+                container.position.set(facadeInfo.xOffset, facadeCenterY, z);
+                group.add(container);
 
-            // 2. Создаем меш с этим базовым материалом
-            const facadeMesh = createPanel(
-                facadeInfo.width, facadeHeight, facadeThicknessM,
-                baseFacadeMaterial, 'frontal', `facade_${doorType}_${index}`
-            );
+                createMilledFacade(facadeInfo.width, facadeHeight, profileData, finalMaterial.clone())
+                    .then(mesh => {
+                        container.add(mesh);
+                        mesh.updateMatrixWorld();
+                    })
+                    .catch(e => console.error(e));
 
-            if (facadeMesh) {
-                // 3. Теперь работаем с материалом КОНКРЕТНОГО меша.
-                // createPanel уже склонировал материал, так что мы не влияем на другие объекты.
-                const actualFacadeMaterial = facadeMesh.material; 
-
-                // 4. Применяем трансформацию текстуры, если она есть
-                if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
-                    MaterialManager.applyTextureTransform(
-                        actualFacadeMaterial,
-                        cabinetData.textureDirection || 'vertical',
-                        facadeInfo.width,
-                        facadeHeight
-                    );
-                    
-                    // 5. Присваиваем НОВУЮ, трансформированную текстуру свойству map
-                    //actualFacadeMaterial.map = transformedTexture;
-                    //actualFacadeMaterial.needsUpdate = true; // Очень важно!
-                }
-
-                // Позиционируем меш
-                const facadeCenterZ = depth / 2 + facadeThicknessM / 2;
-                facadeMesh.position.set(facadeInfo.xOffset, facadeCenterY, facadeCenterZ);
-                facadeMesh.userData.cabinetUUID = cabinetUUID;
+            } else if (buildStrategy === 'aluminum') {
+                // === АЛЮМИНИЙ ===
+                // Вызываем твои функции createZ...
+                // const mesh = createZ1FrameFacade(...)
+                // container.add(mesh)
+                // group.add(container)
                 
-                group.add(facadeMesh);
+            } else {
+                // === ПЛОСКИЙ (Default) ===
+                const z = depth / 2 + finalThickness / 2;
+                
+                // Пересоздаем материал для клонирования текстур
+                const { material: mat } = MaterialManager.getMaterial(facadeSet);
+                
+                const mesh = createPanel(
+                    facadeInfo.width, facadeHeight, finalThickness,
+                    mat, 'frontal', `facade_${doorType}_${index}`
+                );
+
+                if (mesh) {
+                    if (mesh.material.map) {
+                        MaterialManager.applyTextureTransform(mesh.material, cabinetData.textureDirection || 'vertical', facadeInfo.width, facadeHeight);
+                    }
+                    mesh.position.set(facadeInfo.xOffset, facadeCenterY, z);
+                    mesh.userData.cabinetUUID = cabinetUUID;
+                    group.add(mesh);
+                }
             }
         });
         
-        console.log(` - Фасады созданы: ${facadesToCreate.length} шт.`);
+        console.log(` - Фасады созданы: ${facadesToCreate.length} шт. (${buildStrategy})`);
     }
 
     // ==================================================================
@@ -3576,55 +3679,82 @@ export function createDetailedSwingHoodGeometry(cabinetData, kitchenGlobalParams
         const spacerFacadeHeight = height - doorOffsetTopM - doorOffsetBottomM;
         const spacerWidthMm = cabinetData.spacerWidth || 60;
         const spacerFacadeWidth = (spacerWidthMm - 1) / 1000;
-        
+
         const { material: baseFacadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
         const spacerFacadeDepth = facadeThicknessM;
 
-        // 7.2.2. Создание детали
-        const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
-
-        if (spacerFacade) {
-            // 7.2.3. Позиционирование
-            let facadeCenterX;
-            const oneMm = 1 / 1000;
-            if (spacersType.includes('left')) {
-                // правая грань = левая грань шкафа - 1мм
-                const requiredRightFaceX = -width / 2 - oneMm;
-                facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
-            } else { // Правый
-                // левая грань = правая грань шкафа + 1мм
-                const requiredLeftFaceX = width / 2 + oneMm;
-                facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
-            }
-
-            // По Y: нижняя грань = нижняя грань шкафа + отступ снизу
-            const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
-            const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
-            
-            // По Z: задняя грань = передняя грань шкафа
-            const requiredRearFaceZ = depth / 2;
-            const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
-            
-            spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
-            spacerFacade.userData.cabinetUUID = cabinetUUID;
-
-            // 7.2.4. Применяем трансформацию текстуры
-            const facadeMaterial = spacerFacade.material;
-            if (facadeMaterial.map && facadeMaterial.map.isTexture) {
-                const transformedTexture = MaterialManager.applyTextureTransform(
-                    facadeMaterial.map,
-                    cabinetData.textureDirection || 'vertical',
-                    spacerFacadeWidth,
-                    spacerFacadeHeight
-                );
-                facadeMaterial.map = transformedTexture;
-                facadeMaterial.needsUpdate = true;
-            }
-
-            group.add(spacerFacade);
-        }
+        // 7.2.2. Определение стратегии (Фрезеровка или Плоский)
+        let isMilled = false;
+        let profileData = null;
         
-        console.log(` - Фасадная часть для широкого спейсера создана.`);
+        if (window.facadeOptionsData['mdf_milled']) {
+             const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+             if (decor && decor.profileType === '9slice') {
+                 isMilled = true;
+                 profileData = decor;
+             }
+        }
+
+        // 7.2.3. Позиционирование (общие координаты центра)
+        let facadeCenterX;
+        const oneMm = 1 / 1000;
+        if (spacersType.includes('left')) {
+            // правая грань = левая грань шкафа - 1мм
+            const requiredRightFaceX = -width / 2 - oneMm;
+            facadeCenterX = requiredRightFaceX - spacerFacadeWidth / 2;
+        } else { // Правый
+            // левая грань = правая грань шкафа + 1мм
+            const requiredLeftFaceX = width / 2 + oneMm;
+            facadeCenterX = requiredLeftFaceX + spacerFacadeWidth / 2;
+        }
+
+        const requiredBottomFaceY = -height / 2 + doorOffsetBottomM;
+        const facadeCenterY = requiredBottomFaceY + spacerFacadeHeight / 2;
+        
+        const requiredRearFaceZ = depth / 2;
+        const facadeCenterZ = requiredRearFaceZ + spacerFacadeDepth / 2;
+
+
+        // 7.2.4. Создание
+        if (isMilled) {
+            // === ВАРИАНТ 1: ФРЕЗЕРОВКА ===
+            // Создаем контейнер
+            const spacerContainer = new THREE.Group();
+            spacerContainer.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+            spacerContainer.userData.cabinetUUID = cabinetUUID;
+            group.add(spacerContainer);
+
+            // Запускаем билдер
+            // FacadeBuilder сам решит (LOD), делать ли сложный профиль или заглушку,
+            // если спейсер слишком узкий.
+            createMilledFacade(spacerFacadeWidth, spacerFacadeHeight, profileData, baseFacadeMaterial.clone())
+                .then(mesh => {
+                    spacerContainer.add(mesh);
+                    mesh.updateMatrixWorld();
+                })
+                .catch(e => console.error("Ошибка спейсера:", e));
+
+        } else {
+            // === ВАРИАНТ 2: ПЛОСКИЙ ===
+            const spacerFacade = createPanel(spacerFacadeWidth, spacerFacadeHeight, spacerFacadeDepth, baseFacadeMaterial.clone(), 'frontal', 'spacer_facade');
+
+            if (spacerFacade) {
+                spacerFacade.position.set(facadeCenterX, facadeCenterY, facadeCenterZ);
+                spacerFacade.userData.cabinetUUID = cabinetUUID;
+
+                const facadeMaterial = spacerFacade.material;
+                if (facadeMaterial.map && facadeMaterial.map.isTexture) {
+                    MaterialManager.applyTextureTransform(
+                        facadeMaterial,
+                        cabinetData.textureDirection || 'vertical',
+                        spacerFacadeWidth,
+                        spacerFacadeHeight
+                    );
+                }
+                group.add(spacerFacade);
+            }
+        }
+        console.log(` - Фасадная часть для широкого спейсера создана (${isMilled ? 'Milled' : 'Flat'}).`);
     }
 
     // ==================================================================
@@ -5924,9 +6054,6 @@ export function createDetailedOpenUpperGeometry(cabinetData, kitchenGlobalParams
 
 /**
  * Создает детализированную модель ВЕРХНЕЙ ФАЛЬШ-ПАНЕЛИ.
- * @param {object} cabinetData - Объект данных шкафа.
- * ... (остальные параметры)
- * @returns {THREE.Group | null}
  */
 export function createDetailedFalsePanelUpperGeometry(cabinetData, kitchenGlobalParams, MaterialManager, getPanelThickness) {
     if (!cabinetData) return null;
@@ -5939,48 +6066,82 @@ export function createDetailedFalsePanelUpperGeometry(cabinetData, kitchenGlobal
     const cabinetUUID = cabinetData.mesh?.uuid;
 
     // --- 1. Расчет размеров и параметров ---
-    const facadeSet = window.facadeSetsData.find(set => set.id === cabinetData.facadeSet);
-    const { material: facadeMaterial, thickness: facadeThicknessM } = MaterialManager.getMaterial(facadeSet);
-
     const doorOffsetTopM = (cabinetData.doorOffsetTop ?? 0) / 1000;
     const doorOffsetBottomM = (cabinetData.doorOffsetBottom ?? 0) / 1000;
-
     const panelHeight = height - doorOffsetTopM - doorOffsetBottomM;
-    const panelWidth = facadeThicknessM; // Ширина панели = толщина материала
-    const panelDepth = depth;
+    const panelWidthAsDepth = depth; // Глубина шкафа становится шириной фасада
+
+    // --- 2. Материал и Стратегия ---
+    const facadeSet = window.facadeSetsData.find(set => set.id === cabinetData.facadeSet);
+    const { material: baseFacadeMaterial, thickness: baseTh } = MaterialManager.getMaterial(facadeSet);
+
+    let buildStrategy = 'flat';
+    let profileData = null;
+    let finalMaterial = baseFacadeMaterial;
+    let finalThickness = baseTh;
+
+    // Проверяем фрезеровку в базе
+    if (window.facadeOptionsData['mdf_milled']) {
+         const decor = window.facadeOptionsData['mdf_milled'].decors.find(d => d.value === facadeSet?.texture);
+         if (decor && decor.profileType === '9slice') {
+             buildStrategy = 'milled';
+             profileData = decor;
+         }
+    }
+
+    // Считываем сторону ориентации (по умолчанию левая)
+    const side = cabinetData.fp_side || 'left';
+
+    // --- 3. Создание ---
+    const container = new THREE.Group();
+    container.userData.cabinetUUID = cabinetUUID;
     
-    // --- 2. Создание детали ---
-    if (panelWidth > 0 && panelHeight > 0 && panelDepth > 0) {
-        const falsePanel = createPanel(panelWidth, panelHeight, panelDepth, facadeMaterial, 'vertical', 'falsePanelUpper');
-        
-        if (falsePanel) {
-            // --- 3. Позиционирование ---
-            const panelCenterX = 0; // По центру ширины "шкафа"
-            const panelCenterZ = 0; // По центру глубины "шкафа"
+    // Позиция Y: Центр высоты панели (с учетом отступов)
+    const panelCenterY = (height / 2 - doorOffsetTopM) - panelHeight / 2;
+    
+    // Позиция X, Z: Центр шкафа (0,0)
+    container.position.set(0, panelCenterY, 0); 
+    
+    // ПОВОРОТ: 
+    // Left: Лицо смотрит влево (-X). Поворот +90 (Math.PI/2) -> Z переходит в -X.
+    // Right: Лицо смотрит вправо (+X). Поворот -90 (-Math.PI/2) -> Z переходит в +X.
+    if (side === 'left') {
+        container.rotation.y = -Math.PI / 2; 
+    } else {
+        container.rotation.y = Math.PI / 2;
+    }
 
-            // верхняя грань = верхняя грань шкафа - отступ
-            const requiredTopFaceY = height / 2 - doorOffsetTopM;
-            const panelCenterY = requiredTopFaceY - panelHeight / 2;
-            
-            falsePanel.position.set(panelCenterX, panelCenterY, panelCenterZ);
-            falsePanel.userData.cabinetUUID = cabinetUUID;
-            
-            const actualFacadeMaterial = falsePanel.material; 
+    group.add(container);
 
-            // 4. Применяем трансформацию текстуры, если она есть
-            if (actualFacadeMaterial.map && actualFacadeMaterial.map.isTexture) {
+    if (buildStrategy === 'milled') {
+        // === ВАРИАНТ 1: ФРЕЗЕРОВКА ===
+        // Передаем depth как ширину фасада!
+        createMilledFacade(panelWidthAsDepth, panelHeight, profileData, finalMaterial.clone())
+            .then(mesh => {
+                container.add(mesh);
+                mesh.updateMatrixWorld();
+            })
+            .catch(e => console.error("Ошибка фальш-панели:", e));
+
+    } else {
+        // === ВАРИАНТ 2: ПЛОСКИЙ ===
+        const mesh = createPanel(
+            panelWidthAsDepth, panelHeight, finalThickness,
+            finalMaterial.clone(), 'frontal', 'falsePanelUpper'
+        );
+
+        if (mesh) {
+            if (mesh.material.map) {
                 MaterialManager.applyTextureTransform(
-                    actualFacadeMaterial,
-                    cabinetData.textureDirection || 'vertical',
-                    panelDepth,
-                    panelHeight
+                    mesh.material, cabinetData.textureDirection || 'vertical',
+                    panelWidthAsDepth, panelHeight
                 );
             }
-
-            group.add(falsePanel);
-            console.log(' - Верхняя фальш-панель создана.');
+            container.add(mesh);
         }
     }
+    
+    console.log(` - Верхняя фальш-панель создана (${buildStrategy}, side: ${side}).`);
     
     return group;
 }

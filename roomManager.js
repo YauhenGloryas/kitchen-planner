@@ -657,6 +657,10 @@ function updateEdgeColors_RM() {
     }
 }
 
+export function getOriginalWallMaterial() {
+    return originalMaterialForHighlight;
+}
+
 function updateSelectedFaceDisplay_RM() { // Переименовали
     if (selectedFaceDisplayInput_RM) { // Используем переменную модуля
         const faceId = selectedFaceIndex === -1 || !faceNormals[selectedFaceIndex] ? "None" : faceNormals[selectedFaceIndex].id;
@@ -865,6 +869,10 @@ function updateWallTextureScale(texture, faceIndex, materialInfo) {
 
     texture.repeat.set(wallWidth / textureWidthM, wallHeight / textureHeightM);
     texture.needsUpdate = true;
+}
+
+export function getWallMaterial(faceIndex) {
+    return materials[faceIndex];
 }
 
 export {

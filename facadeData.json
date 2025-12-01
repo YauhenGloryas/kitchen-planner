@@ -422,6 +422,40 @@
       "minThickness": 19,
       "maxThickness": 22,
       "useColorPicker": true,
-      "decors": []
+      "decors": [
+        {
+            "value": "classic", 
+            "text": "Классика",
+            "preview": "assets/previews/classic_facade.jpg",
+            "profileType": "9slice",
+            "lod": { 
+                "full": {
+                    "minSize": 230,
+                    "models": {
+                        "corner": "assets/classic_facades/classic_full_corner.glb",
+                        "edge": "assets/classic_facades/classic_full_edge.glb",
+                        "cornerSize": 106, 
+                        "edgeThickness": 19,
+                        "centerThickness": 19,
+                        "centerOffsetZ": 0
+                    }
+                },
+                "simple": {
+                    "minSize": 176,
+                    "models": {
+                        "corner": "assets/classic_facades/classic_simple_corner.glb",
+                        "edge": "assets/classic_facades/classic_simple_edge.glb",
+                        "cornerSize": 76, 
+                        "edgeThickness": 19,
+                        "centerThickness": 10,
+                        "centerOffsetZ": -5
+                    }
+                }
+            },
+            "baseColor": "#FFFFFF",
+            "roughness": 0.6,
+            "metalness": 0.0
+        }
+      ]
     }
   }

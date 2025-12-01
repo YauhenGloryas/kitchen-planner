@@ -43,7 +43,8 @@ import {
     handleRoomClick,
     roomDimensions,
     getRoomSelectedFaceIndex,
-    applyMaterialToWall
+    applyMaterialToWall,
+    getWallMaterial 
     // ... другие необходимые импорты ...
 } from './roomManager.js';
 
@@ -94,6 +95,16 @@ import {
 } from './CabinetFactory.js';
 import { buildApronGeometry } from './ApronBuilder.js';
 import { createPlinth } from './PlinthFactory.js';
+import { preloadFacadeModels } from './AssetLoader.js';
+
+
+//test block ---------
+import { createMilledFacade } from './FacadeBuilder.js';
+window.createMilledFacade = createMilledFacade;
+//import * as MaterialManager from './MaterialManager.js';
+window.MaterialManager = MaterialManager;
+window.THREE = THREE;
+//end pf test block==============
 
 
 // Также убедись, что у рендерера включены карты теней
@@ -8633,6 +8644,8 @@ async function init() {
     await loadWallMaterials();
     await loadFloorMaterials();
     await loadTilesOptions();
+    await preloadFacadeModels();
+
 
     window.facadeSetsData = JSON.parse(localStorage.getItem('facadeSets')) || [];
 
@@ -9029,7 +9042,7 @@ function saveProject() {
             length: currentLength, // Убедись, что эти переменные доступны
             height: currentWidth, 
             width: currentHeight,  
-            materials: (window.RM_materials || []).map(mat => mat.userData.materialId || null)
+            materials: (RM_materials).map(mat => mat.userData.materialId || null)
         },
         kitchenParams: { ...window.kitchenGlobalParams },
         
@@ -9181,6 +9194,24 @@ function loadProject() {
                     const roomW = roomData.width || 2.5;
                     createCube(roomL, roomH, roomW, '#d3d3d3'); 
                     // (обновление инпутов размеров комнаты...)
+
+                    // --- 2.1 Восстановление материалов стен ---
+                    console.log("  [loadProject] Материалы стен...");
+                    if (roomData.materials && Array.isArray(roomData.materials)) {
+                        roomData.materials.forEach((matId, faceIndex) => {
+                            if (matId) {
+                                // Вызываем нашу функцию applyMaterialToWall
+                                // (Убедись, что она доступна: импортирована или window.applyMaterialToWall)
+                                if (applyMaterialToWall) {
+                                    applyMaterialToWall(faceIndex, matId);
+                                } else {
+                                    // Если функция в модуле roomManager, нужно вызывать её оттуда
+                                    // Например: roomManager.applyMaterialToWall(faceIndex, matId);
+                                    console.warn("applyMaterialToWall not available");
+                                }
+                            }
+                        });
+                    }
 
                     // --- 3. ПАРАМЕТРЫ ---
                     if (projectState.kitchenParams) Object.assign(window.kitchenGlobalParams, projectState.kitchenParams);
@@ -9795,6 +9826,17 @@ export function applyConfigMenuSettings(cabinetIndex) {
             // Финальный пересчет отступа от стены для нижних шкафов (после всех изменений глубины, фасадов и т.д.)
             if (cab.type === 'lowerCabinet' && cab.wallId !== 'Bottom') {
                 cab.offsetFromParentWall = window.calculateLowerCabinetOffset(cab);
+            }
+            // Авто-ширина для верхней фальш-панели
+            if (cab.type === 'upperCabinet' && cab.cabinetConfig === 'falsePanelUpper') {
+                const facadeSet = window.facadeSetsData.find(set => set.id === cab.facadeSet);
+                // Используем window.MaterialManager, если он доступен, или импорт
+                // Предполагаем, что MaterialManager доступен в области видимости (он импортирован в main.js)
+                if (window.MaterialManager && window.MaterialManager.getMaterial) {
+                    const { thickness } = window.MaterialManager.getMaterial(facadeSet);
+                    cab.width = thickness;
+                    console.log(`[ACMS] Ширина фальш-панели установлена: ${cab.width}м`);
+                }
             }
         },
         'Изменение конфигурации шкафа' // Имя команды
