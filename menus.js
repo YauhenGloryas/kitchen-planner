@@ -609,6 +609,13 @@ export function updateSpecificConfigFields(cabinetIndex, cabinets, kitchenGlobal
                                 <option value="decorativePanel" ${fpTypeCurrent_UI === 'decorativePanel' ? 'selected' : ''}>Декоративная панель (на стену)</option>
                             </select>
                         </label>
+                        
+                        <label>Ориентация (для узкой/декоративной):
+                            <select id="fp_side" data-set-prop="fp_side">
+                                <option value="left" ${cabinet.fp_side === 'left' ? 'selected' : ''}>Левая (смотрит влево)</option>
+                                <option value="right" ${cabinet.fp_side === 'right' ? 'selected' : ''}>Правая (смотрит вправо)</option>
+                            </select>
+                        </label>
 
                         <label style="display: ${ (fpTypeCurrent_UI === 'wideLeft' || fpTypeCurrent_UI === 'wideRight') ? 'flex' : 'none' };" id="fp_display_wide_width_label">Ширина лицевой части, мм (для широкой):
                             <input type="number" id="fp_display_wide_width" value="${fpDisplayWideWidthMm_UI}" readonly class="readonly-style">

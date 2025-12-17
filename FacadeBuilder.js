@@ -15,6 +15,11 @@ export async function createMilledFacade(width, height, profileData, material) {
     const minDimMm = Math.min(width, height) * 1000;
     let modelsData = null;
 
+    // === ПРИМЕНЕНИЕ СВОЙСТВ МАТЕРИАЛА (Единое место) ===
+    if (profileData.roughness !== undefined) material.roughness = profileData.roughness;
+    if (profileData.metalness !== undefined) material.metalness = profileData.metalness;
+
+
     // Выбор LOD
     if (profileData.lod) {
         if (minDimMm >= profileData.lod.full.minSize) {
@@ -23,7 +28,16 @@ export async function createMilledFacade(width, height, profileData, material) {
             modelsData = profileData.lod.simple;
         } else {
             // Меньше минимума -> Заглушка
-            return new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.019), material);
+            const solidThickMm = profileData.solidThickness || 
+                                 profileData.lod?.full?.edgeThickness || 
+                                 19;
+            const solidThickM = solidThickMm / 1000;   
+            const maxThickM = (profileData.lod?.full?.edgeThickness || 19) / 1000;
+            const offsetZ = - (maxThickM - solidThickM) / 2;
+
+            const geometry = new THREE.BoxGeometry(width, height, solidThickM);
+            geometry.translate(0, 0, offsetZ); // Смещаем геометрию назад                  
+            return new THREE.Mesh(geometry, material);
         }
     } else {
         // Фалбек
@@ -62,6 +76,7 @@ export async function createMilledFacade(width, height, profileData, material) {
         obj.traverse(child => {
             if (child.isMesh) {
                 child.material = material;
+                child.userData.isCabinetPart = true; // <--- ДОБАВИТЬ ЭТО!
             }
         });
     };
@@ -177,28 +192,17 @@ export async function createMilledFacade(width, height, profileData, material) {
 
     // === 3. ЦЕНТР (ФИЛЕНКА) ===
     // Это просто плоскость/бокс, закрывающий дырку.
-    // Размер дырки:
-    // Ширина = Width - 2 * (Ширина профиля). 
-    // Твоя модель Corner 106x106. Значит ширина профиля = 106? Или это с канавкой?
-    // Ты писал: "106 х 106 мм (это полная рамка 79 мм + 27 мм полный размер "канавки")".
-    // Значит "дырка" начинается после 106мм.
     
     const centerW = width - cornerSize * 2;
     const centerH = height - cornerSize * 2;
-    //const centerTh = (modelsData.centerThickness || 6) / 1000; // <--- ВОТ ТУТ БЫЛА ОШИБКА?
-    //const centerZ = (profileData.models.centerOffsetZ || 0) / 1000;
 
     if (centerW > 0 && centerH > 0) {
         const centerGeo = new THREE.BoxGeometry(centerW, centerH, centerTh);
         // Центрируем по Z относительно 0
         const center = new THREE.Mesh(centerGeo, material);
-        
+        center.castShadow = false;
+        center.receiveShadow  = false;
         // Позиция Z:
-        // Рамка стоит от -edgeThick/2 до +edgeThick/2.
-        // Филенка обычно утоплена. centerOffsetZ отсчитывается от чего?
-        // Допустим, от передней плоскости.
-        // Или просто выровняем по задней стенке?
-        // Z = -edgeThick/2 + centerTh/2 (заподлицо сзади).
         center.position.z = -edgeThick / 2 + centerTh / 2 + centerZ; 
         
         group.add(center);

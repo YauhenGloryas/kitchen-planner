@@ -381,7 +381,13 @@
             "roughness": 0.65, 
             "metalness": 0.0 
         },
-        { "value": "CONCRETAFC36", "text": "CONCRETA FC36", "displayColor": "#A8A8A8", "previewImage": "textures/previews/CLEAF/Concreta.jpg", "baseColor": "#b3ab9e", "roughness": 0.65, "metalness": 0.0 },
+        { 
+            "value": "CONCRETAFC36", 
+            "text": "CONCRETA FC36", 
+            "displayColor": "#A8A8A8", 
+            "previewImage": "textures/previews/CLEAF/Concreta.jpg", 
+            "textureImage": "textures/xl/cleaf/Concreta_XL.jpg",
+            "baseColor": "#b3ab9e", "roughness": 0.65, "metalness": 0.0 },
         { "value": "ARESFB48", "text": "ARES FB48", "displayColor": "#8C8A87", "previewImage": "textures/previews/CLEAF/Ares.jpg", "baseColor": "#b3ab9e", "roughness": 0.65, "metalness": 0.0 },
         { "value": "IDEAFB82", "text": "IDEA FB82", "displayColor": "#6B635B", "previewImage": "textures/previews/CLEAF/Idea_FB82.jpg", "baseColor": "#b3b3b3", "roughness": 0.5, "metalness": 0.1 },
         { 
@@ -447,13 +453,14 @@
                         "edge": "assets/classic_facades/classic_simple_edge.glb",
                         "cornerSize": 76, 
                         "edgeThickness": 19,
-                        "centerThickness": 10,
-                        "centerOffsetZ": -5
+                        "centerThickness": 4,
+                        "centerOffsetZ": 1
                     }
                 }
             },
-            "baseColor": "#FFFFFF",
-            "roughness": 0.6,
+            "solidThickness": 19,
+            "baseColor": "#BBBBBB",
+            "roughness": 0.5,
             "metalness": 0.0
         }
       ]

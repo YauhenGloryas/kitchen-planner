@@ -21,8 +21,8 @@ export function loadModel(url) {
                 // Оптимизация: Traverse и включение теней
                 model.traverse((child) => {
                     if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
+                        child.castShadow = false;
+                        child.receiveShadow = false;
                         // Если в модели есть материалы, их можно сохранить или заменить позже
                     }
                 });
