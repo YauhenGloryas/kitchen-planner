@@ -1408,6 +1408,13 @@ function showWindowMenu(x, y, window) {
         <div style="display: flex; flex-direction: column; gap: 5px;">
     `;
 
+    // Если это колонна, добавляем кнопку материала
+    if (window.type === 'column') {
+        html += `<button id="columnMaterialBtn" ...>Настроить материал</button>`;
+    }
+
+
+
     if (window.type === 'door') {
         const groupId = window.groupId;
         let doorCanvas = groupId ? windows.find(w => w.groupId === groupId && w.doorIndex === 0) : window;
@@ -1450,9 +1457,37 @@ function showWindowMenu(x, y, window) {
 
     menu.innerHTML = html;
 
+    // Обработчик
+    const matBtn = document.getElementById('columnMaterialBtn');
+    if (matBtn) {
+        matBtn.onclick = () => {
+             // Импорт или window
+             const picker = window.openObjectMaterialPicker || openObjectMaterialPicker;
+             
+             picker(window, (newMaterialData) => {
+                 // CALLBACK обновления
+                 // Нам нужно создать команду, чтобы изменение сохранилось в истории
+                 
+                 // 1. Копия старого состояния
+                 const { mesh, edges, ...oldData } = window;
+                 const oldState = JSON.parse(JSON.stringify(oldData));
+                 
+                 // 2. Копия нового
+                 const newState = JSON.parse(JSON.stringify(oldData));
+                 newState.materialData = newMaterialData; // Записываем выбор
+                 
+                 // 3. Выполняем команду
+                 // Используем UpdateSimpleObjectCommand (она должна уметь восстанавливать материал!)
+                 const command = new UpdateSimpleObjectCommand(window, newState, oldState);
+                 historyManager.execute(command);
+             });
+        };
+    }
+
     // Добавляем обработчики ко всем числовым полям
     const inputs = menu.querySelectorAll('input[type="text"]');
     inputs.forEach(input => attachExpressionValidator(input));
+
 
     menu.style.left = `${x + 30}px`;
     menu.style.top = `${y - 10}px`;
@@ -1523,6 +1558,184 @@ function deleteWindow(windowIndex) {
     hideSocketMenu();
 }
 
+export function openObjectMaterialPicker(targetObject, onUpdateCallback) {
+    // targetObject - это объект колонны (из массива windows)
+    
+    let modal = document.getElementById('objectMaterialModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'objectMaterialModal';
+        modal.className = 'decor-picker-modal'; // Тот же стиль
+        document.body.appendChild(modal);
+    }
+
+    // Текущий цвет объекта
+    let currentColorHex = '#ffffff';
+    if (targetObject.mesh && targetObject.mesh.material && targetObject.mesh.material.color) {
+        currentColorHex = '#' + targetObject.mesh.material.color.getHexString();
+    }
+    // Если есть сохраненный ID материала
+    if (targetObject.materialData && targetObject.materialData.value && targetObject.materialData.value.startsWith('#')) {
+        currentColorHex = targetObject.materialData.value;
+    }
+
+    // --- HTML ---
+    let html = `
+    <div class="decor-picker-content" style="max-width: 500px;">
+        <div class="decor-picker-header">
+            <span>Материал объекта</span>
+            <span class="decor-picker-close">×</span>
+        </div>
+        <div class="decor-picker-body" style="padding: 15px;">
+            
+            <!-- БЛОК 1: Цвет -->
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Выбрать цвет:</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="color" id="objColorInput" value="${currentColorHex}" style="width: 50px; height: 35px; cursor: pointer;">
+                    <input type="text" id="objHexInput" value="${currentColorHex}" style="width: 80px; padding: 5px; border: 1px solid #ccc;">
+                    <button id="objCopyBtn" title="Копировать">C</button>
+                    <button id="objPasteBtn" title="Вставить">V</button>
+                </div>
+            </div>
+
+            <!-- БЛОК 2: Материалы стен -->
+            <label style="font-weight:bold; display:block; margin-bottom:5px;">Или выбрать материал:</label>
+            <div class="decor-grid" style="max-height: 300px; overflow-y: auto;">
+    `;
+
+    // Заполняем материалами стен
+    if (window.wallMaterialsData) {
+        window.wallMaterialsData.forEach(decor => {
+            const preview = decor.preview 
+                ? `<img src="${decor.preview}" class="decor-preview-img">`
+                : `<span class="color-swatch" style="background:${decor.value}"></span>`;
+                
+            html += `
+                <div class="decor-grid-item" data-id="${decor.id}" title="${decor.name}">
+                    ${preview}
+                    <span>${decor.name}</span>
+                </div>`;
+        });
+    }
+
+    html += `   </div>
+        </div>
+    </div>`;
+
+    modal.innerHTML = html;
+
+    // --- ФУНКЦИЯ ПРИМЕНЕНИЯ ---
+    const applyMaterial = (matData) => {
+        // matData = { type: 'color'|'texture', value: '...', ... }
+        
+        // 1. Обновляем 3D объект
+        if (targetObject.mesh) {
+            let newMat;
+            if (matData.type === 'texture') {
+                const texLoader = MaterialManager ? MaterialManager.loadTexture : (url => new THREE.TextureLoader().load(url));
+                const texture = texLoader(matData.value);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                
+                // Масштабирование (как для стен)
+                // Для колонны (Box) накладываем на все стороны
+                // box width/height/depth
+                const w = targetObject.width;
+                const h = targetObject.height;
+                const d = targetObject.depth;
+                // Простой маппинг: 1м текстуры = 1м объекта
+                // Но у бокса разные грани. CubeUVMapping? Или просто repeat.
+                texture.repeat.set(1, 1); // Пока так
+                
+                newMat = new THREE.MeshStandardMaterial({ 
+                    map: texture, 
+                    color: matData.baseColor || 0xffffff,
+                    roughness: matData.roughness || 0.8
+                });
+            } else {
+                newMat = new THREE.MeshStandardMaterial({ 
+                    color: matData.value,
+                    roughness: matData.roughness || 0.5 
+                });
+            }
+            
+            targetObject.mesh.material = newMat;
+            // Применяем масштабирование текстуры для колонны
+            if (matData.type === 'texture' && window.MaterialManager && window.MaterialManager.applyTexture) {
+                // 'vertical' означает, что текстура идет снизу вверх.
+                // 'vertical' ориентация детали (колонна стоит).
+                window.MaterialManager.applyTexture(targetObject.mesh, 'vertical', 'vertical');
+            }
+            // ====================
+            // targetObject.mesh.material.needsUpdate = true;
+        }
+
+        // 2. Сохраняем данные в объект (для JSON)
+        targetObject.materialData = matData;
+        
+        // 3. Сохраняем историю (через команду UpdateSimpleObjectCommand)
+        // Для этого нужно вызвать createAndExecuteChange извне, или просто обновить userData,
+        // если updateSimpleObjectPosition сохраняет materialData.
+        
+        // ВАЖНО: UpdateSimpleObjectCommand работает с копией state.
+        // Если мы меняем объект напрямую, история не пишется.
+        // Лучше передать изменения через callback.
+        if (onUpdateCallback) onUpdateCallback(matData);
+        
+        if (requestRender) requestRender();
+    };
+
+    // --- ОБРАБОТЧИКИ ---
+    
+    // Color Picker
+    const colorInput = modal.querySelector('#objColorInput');
+    const hexInput = modal.querySelector('#objHexInput');
+
+    const updateFromColor = (hex) => {
+        colorInput.value = hex;
+        hexInput.value = hex;
+        applyMaterial({ type: 'color', value: hex, roughness: 0.5 });
+    };
+
+    colorInput.addEventListener('input', (e) => updateFromColor(e.target.value));
+    hexInput.addEventListener('change', (e) => {
+        let val = e.target.value;
+        if (!val.startsWith('#')) val = '#' + val;
+        if (/^#[0-9A-F]{6}$/i.test(val)) updateFromColor(val);
+    });
+
+    // Materials Grid
+    modal.querySelectorAll('.decor-grid-item').forEach(item => {
+        item.onclick = () => {
+            const id = item.dataset.id;
+            const decor = window.wallMaterialsData.find(d => d.id === id);
+            if (decor) {
+                applyMaterial(decor); // Передаем весь объект декора
+            }
+        };
+    });
+
+    // Copy/Paste (твоя логика)
+    modal.querySelector('#objCopyBtn').onclick = () => {
+        navigator.clipboard.writeText(hexInput.value);
+    };
+    modal.querySelector('#objPasteBtn').onclick = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            // ... валидация ...
+            updateFromColor(text); // Если валидно
+        } catch(e) {}
+    };
+
+    // Close
+    const closeModal = () => modal.style.display = 'none';
+    modal.querySelector('.decor-picker-close').onclick = closeModal;
+    modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+
+    modal.style.display = 'block';
+}
+
 /**
  * Показывает контекстное меню специально для Фартука.
  * (Исправленная версия с авто-позиционированием и кнопками)
@@ -1571,6 +1784,12 @@ function showApronMenu(x, y, apronObject) {
             <label>Ширина, мм: <input type="number" id="apronTotalWidth" value="${wMm}"></label>
             <label>Высота, мм: <input type="number" id="apronTotalHeight" value="${hMm}"></label>
             <label>Толщина, мм: <input type="number" id="apronDepth" value="${dMm}"></label>
+
+            <!-- НОВОЕ ПОЛЕ -->
+            <label>Отступ от стены, мм: 
+                <input type="number" id="apronWallOffset" 
+                       value="${Math.round((apronObject.offsetFromParentWall || 0) * 1000)}">
+            </label>
 
             <div id="tileSettingsBlock" style="display: ${type === 'tiles' ? 'block' : 'none'}; border-top: 1px solid #eee; margin-top: 5px; padding-top: 5px;">
                 <label style="font-weight:bold; font-size:12px; margin-bottom:5px;">Настройки плитки:</label>
@@ -1689,6 +1908,7 @@ function showApronMenu(x, y, apronObject) {
             width: parseFloat(document.getElementById('apronTotalWidth').value) / 1000,
             height: parseFloat(document.getElementById('apronTotalHeight').value) / 1000,
             depth: parseFloat(document.getElementById('apronDepth').value) / 1000,
+            offsetFromParentWall: parseFloat(document.getElementById('apronWallOffset').value) / 1000,
             apronType: document.getElementById('apronTypeSelect').value,
             
             tileWidth: parseFloat(document.getElementById('apronTileWidth').value),
@@ -2761,48 +2981,75 @@ let countertopMenu = null;
 
 function showCountertopMenu(x, y, countertop) {
     hideCountertopMenu();
+    hideAllDimensionInputs();
     
     countertopMenu = document.createElement('div');
-    countertopMenu.className = 'context-menu';
+    countertopMenu.className = 'context-menu'; 
+    // Базовые стили позиционирования нужны, так как координаты динамические
     countertopMenu.style.position = 'absolute';
-    countertopMenu.style.background = '#fff';
-    countertopMenu.style.border = '1px solid #ccc';
-    countertopMenu.style.padding = '10px';
+    countertopMenu.style.left = `${x}px`;
+    countertopMenu.style.top = `${y}px`;
     countertopMenu.style.zIndex = '1000';
-    hideAllDimensionInputs(); // Удаляем старые элементы
-    // Позиционирование меню, как и раньше
-    const menuWidth = 150; // Примерная ширина
-    const menuHeight = 80;  // Примерная высота
-    let posX = x;
-    let posY = y;
-    if (posX + menuWidth > window.innerWidth) posX = window.innerWidth - menuWidth;
-    if (posY + menuHeight > window.innerHeight) posY = window.innerHeight - menuHeight;
-    countertopMenu.style.left = `${posX}px`;
-    countertopMenu.style.top = `${posY}px`;
+    
+    // Внутренняя структура (можно вынести классы, но тут для скорости)
+    countertopMenu.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:8px; padding:5px;">
+            <label style="font-size:13px;">Отступ от стены, мм: 
+                <input type="number" id="ctWallOffset" style="width:60px; margin-left:5px;">
+            </label>
+            <button id="ctMaterialBtn">Выбрать материал...</button>
+            <button id="ctDeleteBtn" class="delete-btn">Удалить</button>
+            <button id="ctCloseBtn">Закрыть</button>
+        </div>
+    `;
+    
+    document.body.appendChild(countertopMenu);
+    
+    // Заполняем значение
+    const offsetInput = countertopMenu.querySelector('#ctWallOffset');
+    const currentOffset = (countertop.userData.offsetFromParentWall || 0) * 1000;
+    offsetInput.value = Math.round(currentOffset);
+    
+    // Обработчики
+    offsetInput.addEventListener('change', () => {
+        const newOffsetM = parseFloat(offsetInput.value) / 1000;
+        const oldState = { ...countertop.userData };
+        const newState = { ...countertop.userData, offsetFromParentWall: newOffsetM };
+        
+        // Предполагаем, что UpdateCountertopCommand доступна
+        const command = new UpdateCountertopCommand(countertop, newState, oldState);
+        historyManager.execute(command);
+    });
 
-    // Кнопка выбора материала
-    const pickerButton = document.createElement('button');
-    pickerButton.textContent = 'Выбрать материал...';
-    pickerButton.onclick = () => {
-        // Передаем сам объект столешницы в модальное окно
+    countertopMenu.querySelector('#ctMaterialBtn').onclick = () => {
         openCountertopPickerModal(countertop);
         hideCountertopMenu();
     };
-    countertopMenu.appendChild(pickerButton);
-    countertopMenu.appendChild(document.createElement('br'));
 
-    // Кнопка "Удалить"
-    const deleteButton = document.createElement('button');
-    deleteButton.textContent = 'Удалить';
-    deleteButton.style.marginTop = '5px';
-    deleteButton.addEventListener('click', () => {
+    countertopMenu.querySelector('#ctDeleteBtn').onclick = () => {
         const command = new RemoveCountertopCommand(scene, countertops, countertop);
         historyManager.execute(command);
         hideCountertopMenu();
-    });
-    countertopMenu.appendChild(deleteButton);
+    };
+    
+    countertopMenu.querySelector('#ctCloseBtn').onclick = () => {
+        hideCountertopMenu();
+        // Сброс выделения
+        if (typeof clearSelection === 'function') {
+            clearSelection();
+        } else {
+            // Фалбек
+            selectedCabinets = [];
+            selectedCabinet = null;
+            if (removeHighlight) removeHighlight(countertop);
+        }
+        if (requestRender) requestRender();
+    };
 
-    document.body.appendChild(countertopMenu);
+    // Коррекция позиции (чтобы не ушло за экран)
+    const rect = countertopMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) countertopMenu.style.left = (window.innerWidth - rect.width - 5) + 'px';
+    if (rect.bottom > window.innerHeight) countertopMenu.style.top = (window.innerHeight - rect.height - 5) + 'px';
 }
 
 function hideCountertopMenu() {
@@ -3879,7 +4126,7 @@ function applyCabinetChanges(cabinetIndex) {
 
             // Отступ от стены для нижних
             if (cab.type === 'lowerCabinet' && cab.wallId !== 'Bottom') {
-                cab.offsetFromParentWall = window.calculateLowerCabinetOffset(cab);
+                cab.offsetFromParentWall = calculateLowerCabinetOffset(cab);
             }
 
             // Высота и положение для верхних
@@ -8100,10 +8347,16 @@ renderer.domElement.addEventListener('click', (event) => {
         }
     });
     windows.forEach(w => {
-         // Возвращаем исходный цвет окнам/дверям и т.п.
         if (w.mesh && w.mesh.material) {
-            // Эта логика может конфликтовать с подсветкой, но если она вам нужна, оставляем
-            w.mesh.material.color.set(w.initialColor);
+            // Если у объекта есть выбранный материал - восстанавливаем ЕГО цвет
+            if (w.materialData && w.materialData.value && !w.materialData.type.includes('texture')) {
+                 w.mesh.material.color.set(w.materialData.value);
+            } 
+            // Иначе восстанавливаем дефолтный начальный
+            else if (!w.materialData) {
+                 w.mesh.material.color.set(w.initialColor);
+            }
+            
             w.mesh.material.needsUpdate = true;
         }
     });
@@ -10185,7 +10438,6 @@ window.updateCountertop3D = function(countertop, stateToApply, previousState) {
     
     const { length, depth, wallId, materialId, countertopType, thickness } = countertop.userData;
 
-
     // --- 0. Расчет вырезов ---
     const holes = [];
     
@@ -10312,19 +10564,23 @@ window.updateCountertop3D = function(countertop, stateToApply, previousState) {
  
     // 4. Позиция. `UpdateGlobalParamsCommand` уже сама правильно меняет Y.
     const depthDifference = depth - (oldState.depth || depth);
+    const offset = countertop.userData.offsetFromParentWall || 0; // Получаем отступ
+    const roomL = roomDimensions.getLength();
+    const roomH = roomDimensions.getHeight();
+    //const wallId = countertop.userData.wallId;
 
-    if (Math.abs(depthDifference) > 1e-5) {
-        const shift = depthDifference / 2;
-        
-        // Вектор, направленный "вперед" от стены
-        let forwardVector = new THREE.Vector3();
-        if (wallId === 'Back')  forwardVector.set(0, 0, 1);
-        if (wallId === 'Front') forwardVector.set(0, 0, -1);
-        if (wallId === 'Left')  forwardVector.set(1, 0, 0);
-        if (wallId === 'Right') forwardVector.set(-1, 0, 0);
-        
-        // Сдвигаем позицию центра столешницы в этом направлении на половину изменения глубины
-        countertop.position.addScaledVector(forwardVector, shift);
+    if (wallId === 'Back') {
+        // Стена Z = -roomH/2. Вперед = +Z.
+        countertop.position.z = -roomH/2 + offset + depth/2;
+        // X и Y не трогаем (они правильные)
+    } else if (wallId === 'Left') {
+        // Стена X = -roomL/2. Вперед = +X.
+        countertop.position.x = -roomL/2 + offset + depth/2;
+    } else if (wallId === 'Right') {
+        // Стена X = +roomL/2. Вперед = -X.
+        countertop.position.x = roomL/2 - offset - depth/2;
+    } else if (wallId === 'Front') {
+        countertop.position.z = roomH/2 - offset - depth/2;
     }
     countertop.updateMatrixWorld(true);
     
@@ -10534,6 +10790,13 @@ function calculateLowerCabinetOffset(cabinet) {
         return cabinet ? cabinet.offsetFromParentWall || 0 : 0; // Возвращаем старый или 0
     }
 
+    // Ищем столешницу на стене (как в getCountertopDepthForWall)
+    const ct = window.countertops.find(c => c.userData.wallId === cabinet.wallId);
+
+    // Получаем параметры столешницы
+    const ctDepth = ct ? ct.userData.depth : (window.kitchenGlobalParams.countertopDepth / 1000);
+    const ctOffset = (ct && ct.userData.offsetFromParentWall) ? ct.userData.offsetFromParentWall : 0;
+
     const wallCountertopDepth = getCountertopDepthForWall(cabinet.wallId); // Глубина столешницы в метрах
 
     // Получаем параметры шкафа
@@ -10571,7 +10834,7 @@ function calculateLowerCabinetOffset(cabinet) {
     }
 
     // Расчет отступа: ГлубинаСтол - Свес - ТолщинаФасада - ГлубинаКорпуса
-    const offset = wallCountertopDepth - cabOverhang - facadeThicknessMeters - cabDepth;
+    const offset = (ctDepth + ctOffset) - cabOverhang - facadeThicknessMeters - cabDepth;
     //console.log(`[CalcOffset] Расчет: ${wallCountertopDepth.toFixed(3)} - ${cabOverhang.toFixed(3)} - ${facadeThicknessMeters.toFixed(3)} - ${cabDepth.toFixed(3)} = ${offset.toFixed(3)}`);
 
     return offset;

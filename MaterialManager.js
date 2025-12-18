@@ -10,7 +10,7 @@ const loader = new THREE.TextureLoader();
  * @param {string} path - Путь к файлу текстуры.
  * @returns {THREE.Texture}
  */
-function loadTexture(path) {
+export function loadTexture(path) {
     if (textureCache.has(path)) {
         return textureCache.get(path);
     }

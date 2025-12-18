@@ -395,35 +395,85 @@ export class UpdateSimpleObjectCommand {
         // 1. Применяем данные к объекту
         Object.assign(this.target, state);
         
-        // 2. Обновляем его 3D-представление
+        // 2. Обновляем МАТЕРИАЛ (Новое!)
+        // Если в состоянии есть materialData, применяем его.
+        // Если нет - оставляем текущий (или восстанавливаем дефолт, если это Undo создания).
+        
         if (this.target.mesh) {
+            // === ОБНОВЛЕНИЕ МАТЕРИАЛА ===
+            if (state.materialData) {
+                let newMaterial;
+                
+                if (state.materialData.type === 'texture') {
+                    // Текстура
+                    const texUrl = state.materialData.value || state.materialData.textureImage;
+                    const loader = new THREE.TextureLoader();
+                    const texture = loader.load(texUrl);
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    
+                    // Маппинг для BoxGeometry
+                    // (Упрощенно: 1 повтор на грань, или пересчет в зависимости от размера)
+                    texture.repeat.set(1, 1); 
+
+                    newMaterial = new THREE.MeshStandardMaterial({
+                        map: texture,
+                        color: state.materialData.baseColor || 0xffffff,
+                        roughness: state.materialData.roughness || 0.5
+                    });
+                } else {
+                    // Цвет
+                    newMaterial = new THREE.MeshStandardMaterial({
+                        color: state.materialData.value,
+                        roughness: state.materialData.roughness || 0.5
+                    });
+                }
+
+                // Заменяем материал
+                if (this.target.mesh.material) this.target.mesh.material.dispose();
+                this.target.mesh.material = newMaterial;
+            }
+            // Если state.materialData нет, материал не трогаем (он останется старым или дефолтным)
+            // =============================
+
+
+            // 3. Обновляем ГЕОМЕТРИЮ (Старый код)
             this.target.mesh.geometry.dispose();
-            this.target.mesh.geometry = new THREE.BoxGeometry(this.target.width, this.target.height, this.target.depth);
+            this.target.mesh.geometry = new THREE.BoxGeometry(state.width, state.height, state.depth);
+            
             if (this.target.edges) {
                 this.target.edges.geometry.dispose();
                 this.target.edges.geometry = new THREE.EdgesGeometry(this.target.mesh.geometry);
             }
             
-            // Получаем размеры комнаты для позиционирования
+            // 4. ПОЗИЦИОНИРОВАНИЕ (Старый код)
             const currentLength = roomDimensions.getLength();
             const currentWidth = roomDimensions.getWidth();
             const currentHeight = roomDimensions.getHeight();
             
-            // Код позиционирования (из твоей старой функции)
-            switch (this.target.wallId) {
+            switch (state.wallId) { // Используем state.wallId, а не this.target
                 case "Back":
-                    this.target.mesh.position.set(-currentLength / 2 + this.target.offsetAlongWall + this.target.width / 2, -currentWidth / 2 + this.target.offsetBottom + this.target.height / 2, -currentHeight / 2 + this.target.offsetFromParentWall + this.target.depth / 2);
+                    this.target.mesh.position.set(-currentLength / 2 + state.offsetAlongWall + state.width / 2, -currentWidth / 2 + state.offsetBottom + state.height / 2, -currentHeight / 2 + state.offsetFromParentWall + state.depth / 2);
                     this.target.mesh.rotation.y = 0;
                     break;
                 case "Left":
-                    this.target.mesh.position.set(-currentLength / 2 + this.target.offsetFromParentWall + this.target.depth / 2, -currentWidth / 2 + this.target.offsetBottom + this.target.height / 2, -currentHeight / 2 + this.target.offsetAlongWall + this.target.width / 2);
+                    this.target.mesh.position.set(-currentLength / 2 + state.offsetFromParentWall + state.depth / 2, -currentWidth / 2 + state.offsetBottom + state.height / 2, -currentHeight / 2 + state.offsetAlongWall + state.width / 2);
                     this.target.mesh.rotation.y = THREE.MathUtils.degToRad(90);
                     break;
                 case "Right":
-                    this.target.mesh.position.set(currentLength / 2 - this.target.offsetFromParentWall - this.target.depth / 2, -currentWidth / 2 + this.target.offsetBottom + this.target.height / 2, -currentHeight / 2 + this.target.offsetAlongWall + this.target.width / 2);
+                    this.target.mesh.position.set(currentLength / 2 - state.offsetFromParentWall - state.depth / 2, -currentWidth / 2 + state.offsetBottom + state.height / 2, -currentHeight / 2 + state.offsetAlongWall + state.width / 2);
                     this.target.mesh.rotation.y = THREE.MathUtils.degToRad(-90);
                     break;
             }
+
+            if (state.materialData && state.materialData.type === 'texture') {
+                if (window.MaterialManager && window.MaterialManager.applyTexture) {
+                    window.MaterialManager.applyTexture(this.target.mesh, 'vertical', 'vertical');
+                }
+            }
+            
+            // Обновляем матрицы, чтобы изменения применились сразу
+            this.target.mesh.updateMatrixWorld();
         }
     }
 
@@ -547,6 +597,8 @@ export class UpdateCountertopCommand {
     }
 
     _apply(state, prevState) {
+        // Обновляем данные (важно!)
+        Object.assign(this.target.userData, state);
         // Вызываем центральную функцию обновления, как и раньше
         window.updateCountertop3D(this.target, state, prevState);
 

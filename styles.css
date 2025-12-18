@@ -105,7 +105,7 @@ input[type="number"], select {
 }
 
 button {
-    margin-top: 5px;
+    margin-top: 2px;
     padding: 5px 10px;
     border: 1px solid #ccc;
     border-radius: 3px;
@@ -412,6 +412,10 @@ button {
     background-color: #6c757d; /* Серый */
 }
 
+.delete-btn {
+    background-color: #dc3545; /* Красный */
+}
+
 /* ================================================================ */
 /* === КОНЕЦ УНИФИЦИРОВАННОГО БЛОКА =============================== */
 /* ================================================================ */
@@ -537,6 +541,7 @@ button {
     font-family: Arial, sans-serif;
     font-size: 14px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    background: #ddd;
 }
 
 .context-menu label {
